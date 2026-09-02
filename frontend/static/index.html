@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Context Engine + Multi-Agent QA</title>
+<style>
+:root {
+  --bg:#0f1220; --panel:#191d2e; --panel2:#222740; --text:#e7eaf6; --muted:#8a93b0;
+  --accent:#5b8cff; --accent2:#4ecc9b; --border:#2c3350; --warn:#ff9a6b;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text)}
+#app{height:100vh;display:flex;flex-direction:column}
+header{display:flex;justify-content:space-between;align-items:center;padding:12px 22px;border-bottom:1px solid var(--border);background:var(--panel)}
+.brand{display:flex;align-items:center;gap:10px}
+.logo{font-size:26px}
+h1{margin:0;font-size:17px}
+.sub{margin:2px 0 0;font-size:12px;color:var(--muted)}
+.badges{display:flex;gap:10px;align-items:center}
+.badge{font-size:12px;background:var(--panel2);border:1px solid var(--border);padding:4px 10px;border-radius:12px;color:var(--accent2)}
+.suggest{font-size:12px;background:#2a3355;color:var(--text);border:0;border-radius:8px;padding:6px 10px;cursor:pointer}
+main{display:flex;flex:1;overflow:hidden}
+.chat{flex:1;display:flex;flex-direction:column;border-right:1px solid var(--border)}
+.messages{flex:1;overflow-y:auto;padding:22px;display:flex;flex-direction:column;gap:14px}
+.hint{color:var(--muted);font-size:13px;line-height:1.7;max-width:460px}
+.msg{display:flex}.msg.user{justify-content:flex-end}
+.bubble{max-width:70ch;padding:10px 14px;border-radius:14px;font-size:14px;line-height:1.6;white-space:pre-wrap}
+.msg.user .bubble{background:var(--accent);color:#fff;border-bottom-right-radius:4px}
+.msg.assistant .bubble{background:var(--panel2);border:1px solid var(--border);border-bottom-left-radius:4px}
+.inputbar{display:flex;gap:10px;padding:14px 22px;background:var(--panel);border-top:1px solid var(--border)}
+textarea{flex:1;resize:none;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:14px;min-height:42px;font-family:inherit}
+textarea:focus{outline:none;border-color:var(--accent)}
+.send{background:var(--accent);color:#fff;border:0;border-radius:10px;padding:0 20px;font-size:14px;cursor:pointer}
+.send:disabled{opacity:.5;cursor:not-allowed}
+.error{color:#ff7b7b;font-size:12px;padding:0 22px;margin:0 0 8px}
+.side{width:400px;display:flex;flex-direction:column;background:var(--panel)}
+.tabbar{display:flex;gap:8px;padding:12px 16px 0}
+.tab{font-size:13px;color:var(--muted);padding:6px 12px;border-radius:8px 8px 0 0;cursor:pointer}
+.tab.active{color:var(--accent);background:var(--panel2)}
+.panels{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:20px}
+.panel h3{margin:0 0 6px;font-size:15px;color:var(--accent)}
+.empty{color:var(--muted);font-size:13px}
+.budget{display:flex;flex-direction:column;gap:6px}
+.bar{height:10px;background:var(--panel2);border-radius:6px;overflow:hidden}
+.fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .3s}
+.meta{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+.trim{color:var(--warn)}
+.note{font-size:12px;color:#ffb36b;background:#2a2415;padding:8px 10px;border-radius:8px}
+.slots{display:flex;flex-direction:column;gap:8px}
+.slot{background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:8px 10px}
+.slot-head{display:flex;gap:8px;align-items:center;margin-bottom:4px;font-size:11px}
+.tag{padding:1px 7px;border-radius:4px;background:#2a3355}
+.tag.t-retrieval{background:#23425f;color:#9ed3ff}.tag.t-history{background:#3a2a55;color:#c9a9ff}
+.tag.t-summary{background:#553a2a;color:#ffc9a9}.tag.t-tool{background:#2f5542;color:#a9ffcb}
+.prio,.tok{color:var(--muted)}
+.slot-body{font-size:12px;line-height:1.5;color:#cfd6ee;max-height:60px;overflow:hidden}
+.agent-head{display:flex;justify-content:space-between;align-items:center}
+.backend{font-size:11px;color:var(--muted);background:var(--panel2);padding:2px 8px;border-radius:10px}
+.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.step{background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px}
+.step-head{display:flex;align-items:center;gap:8px}
+.node{font-weight:600;color:var(--accent2)}
+.summary{color:var(--muted);font-size:12px}
+.tools{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.t-label{font-size:12px;color:var(--muted)}
+.tool{font-size:11px;background:#23425f;color:#9ed3ff;padding:2px 8px;border-radius:10px}
+@media(max-width:900px){.side{display:none}}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand"><span class="logo">🧠</span><div>
+      <h1>Context Engine + Multi-Agent QA</h1>
+      <p class="sub">上下文引擎 · 多 Agent 协作 · RAG · LoRA 微调</p>
+    </div></div>
+    <div class="badges">
+      <span class="badge" id="backend">connecting…</span>
+      <button class="suggest" onclick="useExample()">示例：毛衣保养</button>
+    </div>
+  </header>
+  <main>
+    <section class="chat">
+      <div class="messages" id="msgs">
+        <div class="hint">输入知识类问题（如「毛衣怎么洗？」）或调用工具（如「上海天气」「3*4+2」），并观察左侧的 Agent 协作链与右侧的上下文分配。</div>
+      </div>
+      <div class="inputbar">
+        <textarea id="input" rows="1" placeholder="输入问题（如：尺码推荐 / 上海天气 / 计算 3*4+2）"
+                  onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send()}"></textarea>
+        <button class="send" id="sendBtn" onclick="send()">发送</button>
+      </div>
+      <p class="error" id="err"></p>
+    </section>
+    <aside class="side">
+      <div class="tabbar"><span class="tab active" onclick="switchTab('ctx',this)">上下文</span>
+        <span class="tab" onclick="switchTab('agent',this)">Agent 链</span></div>
+      <div class="panels">
+        <div class="panel" id="ctxPanel"><h3>Context Engine 上下文分配</h3><div class="empty">发送消息后展示。</div></div>
+        <div class="panel" id="agentPanel" style="display:none"><h3>多 Agent 协作链</h3><div class="empty">发送消息查看。</div></div>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const kindLabel = {system:'系统指令',summary:'摘要压缩',retrieval:'检索上下文',history:'对话历史',tool:'工具结果'};
+const kindIcon = {router:'🔀',retrieve:'📚',tool:'🔧',writer:'✍️',direct:'➡️'};
+let streaming = false;
+
+function useExample(){ $('#input').value = '针织毛衣如何保养？'; }
+
+async function health(){
+  try{
+    const h = await (await fetch('/health')).json();
+    $('#backend').textContent = `${h.chat_backend} / ${h.retrieval_backend}`;
+  }catch(e){ $('#backend').textContent = '后端未连接'; }
+}
+
+async function send(){
+  const txt = $('#input').value.trim();
+  if(!txt || streaming) return;
+  $('#err').textContent='';
+  addMsg('user', txt);
+  $('#input').value='';
+  streaming = true; $('#sendBtn').disabled = true;
+  const asst = addMsg('assistant','');
+  resetPanels();
+  try{
+    const res = await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({message:txt, session_id:'default', stream:true})});
+    const reader = res.body.getReader(); const dec = new TextDecoder(); let buf='';
+    let trace=[], context=null;
+    while(true){
+      const {done,value} = await reader.read(); if(done) break;
+      buf += dec.decode(value,{stream:true});
+      let i;
+      while((i=buf.indexOf('\n\n'))!==-1){
+        const raw = buf.slice(0,i); buf = buf.slice(i+2);
+        const line = raw.split('\n').find(l=>l.startsWith('data: ')); if(!line) continue;
+        const evt = JSON.parse(line.slice(6));
+        if(evt.type==='agent'){ trace.push(evt.data); }
+        else if(evt.type==='token'){ asst.textContent += evt.data; scroll(); }
+        else if(evt.type==='done'){ context = evt.data.context; $('#backend').textContent=evt.data.backend; }
+      }
+    }
+    renderContext(context); renderAgent(trace);
+  }catch(e){ $('#err').textContent='请求失败：'+(e.message||e); }
+  finally{ streaming=false; $('#sendBtn').disabled=false; }
+}
+
+function addMsg(role, text){
+  const wrap = document.createElement('div');
+  wrap.className = 'msg ' + role;
+  const b = document.createElement('div'); b.className='bubble'; b.textContent=text;
+  wrap.appendChild(b); $('#msgs').appendChild(wrap);
+  if($('#msgs').querySelector('.hint')) $('#msgs').querySelector('.hint').remove();
+  scroll(); return b;
+}
+function scroll(){ $('#msgs').scrollTop = $('#msgs').scrollHeight; }
+function resetPanels(){
+  $('#ctxPanel').innerHTML = '<h3>Context Engine 上下文分配</h3><div class="empty">发送消息后展示。</div>';
+  $('#agentPanel').innerHTML = '<h3>多 Agent 协作链</h3><div class="empty">发送消息查看。</div>';
+}
+
+function renderContext(ctx){
+  if(!ctx){$('#ctxPanel').innerHTML='<h3>Context Engine 上下文分配</h3><div class="empty">发送消息后展示。</div>';return;}
+  const pct = ctx.budget? Math.min(100, Math.round(ctx.total_tokens/ctx.budget*100)) : 0;
+  let h = '<h3>Context Engine 上下文分配</h3>';
+  h += `<div class="budget"><div class="bar"><div class="fill" style="width:${pct}%"></div></div>`;
+  h += `<div class="meta"><span>${ctx.total_tokens} / ${ctx.budget} tokens ${ctx.trimmed>0?`<span class="trim">（裁剪 ${ctx.trimmed}）</span>`:''}</span><span>${pct}%</span></div></div>`;
+  if(ctx.trimmed>0) h += `<div class="note">⚠️ 超出预算，已按「优先级从低到高」裁剪低优先片段。</div>`;
+  h += '<div class="slots">';
+  (ctx.slots||[]).forEach(s=>{
+    h += `<div class="slot"><div class="slot-head"><span class="tag t-${s.kind}">${kindLabel[s.kind]||s.kind}</span><span class="prio">prio ${s.priority}</span><span class="tok">${s.tokens} tok</span></div><div class="slot-body">${esc(s.content)}</div></div>`;
+  });
+  h += '</div>'; $('#ctxPanel').innerHTML = h;
+}
+
+function renderAgent(trace){
+  if(!trace.length){$('#agentPanel').innerHTML='<h3>多 Agent 协作链</h3><div class="empty">发送消息查看。</div>';return;}
+  let h='<div class="agent-head"><h3 style="margin:0">多 Agent 协作链</h3><span class="backend">后端：'+($('#backend').textContent)+'</span></div>';
+  h+='<ol class="steps">';
+  trace.forEach(s=>{
+    h+=`<li class="step"><div class="step-head"><span>${kindIcon[s.kind]||'·'}</span><span class="node">${s.node}</span><span class="summary">${esc(s.summary)}</span></div></li>`;
+  });
+  h+='</ol>'; $('#agentPanel').innerHTML=h;
+}
+
+function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function switchTab(id, el){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  $('#ctxPanel').style.display = id==='ctx'?'':'none';
+  $('#agentPanel').style.display = id==='agent'?'':'none';
+}
+
+health();
+</script>
+</body>
+</html>

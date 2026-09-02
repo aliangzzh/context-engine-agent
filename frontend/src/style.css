@@ -1,0 +1,27 @@
+:root {
+  --bg: #0f1220;
+  --panel: #191d2e;
+  --panel2: #222740;
+  --text: #e7eaf6;
+  --muted: #8a93b0;
+  --accent: #5b8cff;
+  --accent2: #4ecc9b;
+  --border: #2c3350;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+#app { height: 100vh; }
+
+button, input, textarea {
+  font-family: inherit;
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #333a5a; border-radius: 4px; }
