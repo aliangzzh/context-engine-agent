@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+backend/tests/_scratch/
+
+# Env / secrets
+.env
+backend/.env
+
+# Data
+backend/data/chat_history/
+backend/data/kb/kb.json
+backend/data/kb/md5.txt
+backend/finetune/outputs/
+
+# Node
+node_modules/
+frontend/dist/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

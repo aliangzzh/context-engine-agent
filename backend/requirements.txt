@@ -1,0 +1,21 @@
+# Core backend (offline demo runs with just these)
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+python-dotenv>=1.0
+requests>=2.31
+
+# --- Optional: upgrade retrieval to embedding similarity (needs DASHSCOPE_API_KEY) ---
+# langchain-community>=0.2
+# langchain-core>=0.2
+# faiss-cpu
+
+# --- Optional: local fine-tuned model inference (needs GPU for training) -------------
+# torch
+# transformers>=4.44
+# peft>=0.12
+# accelerate
+# datasets
+
+# --- Optional: precise token counts -------------------------------------------------
+# tiktoken
