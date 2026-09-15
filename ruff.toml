@@ -1,0 +1,18 @@
+# Ruff 配置（后端 Lint 规范）
+#
+# 本地：pip install ruff && ruff check backend
+# CI  ：.github/workflows/ci.yml 的 backend-lint 任务会跑同一份配置
+#
+# 规则集刻意保守（= ruff 默认的 E4/E7/E9/F）：先保证"没有未使用导入、
+# 没有未定义名字、没有语法错误"这类真问题；格式化与 import 排序（I）留给
+# `ruff format` 单独引入，避免一次性大改 diff。
+line-length = 120
+target-version = "py311"
+extend-exclude = ["backend/tests/_scratch", "backend/finetune/outputs"]
+
+[lint]
+select = ["E4", "E7", "E9", "F"]
+
+[lint.per-file-ignores]
+# 测试里允许"导入即副作用"的写法
+"backend/tests/*.py" = ["E402"]
