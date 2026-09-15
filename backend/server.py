@@ -70,10 +70,22 @@ class Handler(BaseHTTPRequestHandler):
     def _read_json(self) -> dict:
         length = int(self.headers.get("Content-Length", 0) or 0)
         raw = self.rfile.read(length) if length else b"{}"
-        try:
-            return json.loads(raw.decode("utf-8"))
-        except Exception:
+        if not raw.strip():
             return {}
+        try:
+            # utf-8-sig: 容忍 Windows 工具写入的 UTF-8 BOM
+            return json.loads(raw.decode("utf-8-sig"))
+        except Exception:
+            # 让调用方回 400，而不是抛到 socketserver 里把连接直接掐断。
+            raise ValueError("invalid JSON body")
+
+    def _send_error(self, exc: BaseException) -> None:
+        """把未捕获异常转成 JSON 错误响应（原本会直接断开连接）。"""
+        code = 400 if exc.__class__.__name__ in ("ValidationError", "ValueError") else 500
+        try:
+            self._send_json(code, {"error": exc.__class__.__name__, "detail": str(exc)[:300]})
+        except Exception:
+            pass  # SSE 等已经开始写响应体的场景，只能放弃本次响应
 
     def _send_file(self, path: Path) -> None:
         data = path.read_bytes()
@@ -106,31 +118,37 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self) -> None:
-        path = urlparse(self.path).path
-        if path == "/health":
-            return self._send_json(*handle_health())
-        if path.startswith("/api/context/"):
-            sid = path.rsplit("/", 1)[1]
-            return self._send_json(*handle_context(sid))
-        if path == "/" or path == "/index.html":
-            index = STATIC_DIR / "index.html"
-            if index.exists():
-                return self._send_file(index)
-            return self._send_json(200, {"message": "static UI not found", "static_dir": str(STATIC_DIR)})
-        return self._send_json(404, {"error": "not found"})
+        try:
+            path = urlparse(self.path).path
+            if path == "/health":
+                return self._send_json(*handle_health())
+            if path.startswith("/api/context/"):
+                sid = path.rsplit("/", 1)[1]
+                return self._send_json(*handle_context(sid))
+            if path == "/" or path == "/index.html":
+                index = STATIC_DIR / "index.html"
+                if index.exists():
+                    return self._send_file(index)
+                return self._send_json(200, {"message": "static UI not found", "static_dir": str(STATIC_DIR)})
+            return self._send_json(404, {"error": "not found"})
+        except Exception as exc:  # noqa: BLE001 - surfaced as a JSON error response
+            return self._send_error(exc)
 
     def do_POST(self) -> None:
-        path = urlparse(self.path).path
-        payload = self._read_json()
-        if path == "/api/chat":
-            return self._send_json(*handle_chat(payload))
-        if path == "/api/chat/plan":
-            return self._send_json(*handle_chat_plan(payload))
-        if path == "/api/kb/ingest":
-            return self._send_json(*handle_ingest(payload))
-        if path == "/api/chat/stream":
-            return self._send_sse(handle_chat_stream(payload)[1])
-        return self._send_json(404, {"error": "not found"})
+        try:
+            path = urlparse(self.path).path
+            payload = self._read_json()
+            if path == "/api/chat":
+                return self._send_json(*handle_chat(payload))
+            if path == "/api/chat/plan":
+                return self._send_json(*handle_chat_plan(payload))
+            if path == "/api/kb/ingest":
+                return self._send_json(*handle_ingest(payload))
+            if path == "/api/chat/stream":
+                return self._send_sse(handle_chat_stream(payload)[1])
+            return self._send_json(404, {"error": "not found"})
+        except Exception as exc:  # noqa: BLE001 - surfaced as a JSON error response
+            return self._send_error(exc)
 
 
 def main():
