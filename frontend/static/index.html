@@ -113,8 +113,11 @@ function useExample(){ $('#input').value = '针织毛衣如何保养？'; }
 
 async function health(){
   try{
-    const h = await (await fetch('/health')).json();
-    $('#backend').textContent = `${h.chat_backend} / ${h.retrieval_backend}`;
+    // 统一响应体：{code, msg, data}，这里解包 data
+    const body = await (await fetch('/health')).json();
+    const h = body.data || body;
+    $('#backend').textContent = `${h.chat_backend} / ${h.retrieval_backend}` +
+      (h.db_backend ? ` · ${h.db_backend}+${h.cache_backend}` : '');
   }catch(e){ $('#backend').textContent = '后端未连接'; }
 }
 
@@ -143,6 +146,7 @@ async function send(){
         if(evt.type==='agent'){ trace.push(evt.data); }
         else if(evt.type==='token'){ asst.textContent += evt.data; scroll(); }
         else if(evt.type==='done'){ context = evt.data.context; $('#backend').textContent=evt.data.backend; }
+        else if(evt.type==='error'){ $('#err').textContent = `服务端错误(${evt.data.code})：${evt.data.msg}`; }
       }
     }
     renderContext(context); renderAgent(trace);
