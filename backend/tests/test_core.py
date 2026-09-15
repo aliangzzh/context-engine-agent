@@ -15,12 +15,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
+from app import config
 from app.agents.orchestrator import AgentOrchestrator
 from app.agents.router import route
 from app.agents.tools import calculator, get_tool, get_weather
 from app.context.engine import ContextEngine
 from app.context.history import ChatStore, HistoryManager, HistoryTurn
 from app.context.rerank import Reranker
+from app.context.summarizer import HistorySummarizer
 from app.context.token_budget import TokenBudget, token_len
 from app.models.fake import FakeModel
 from app.retrieval.knowledge import KnowledgeBase
@@ -170,6 +172,89 @@ class ContextEngineTest(unittest.TestCase):
             user_input="x", retrieved=[], history=[], system_prompt="sys"
         )
         self.assertFalse(ctx.over_budget)
+
+
+class SummarizerTest(unittest.TestCase):
+    """摘要器：是否真被调用、失败兜底、以及摘要槽在上下文里的位置。"""
+
+    class _SpyModel:
+        """假模型：只记录"被喂了什么"，用来验证调用链。"""
+
+        name = "spy"
+
+        def __init__(self):
+            self.calls = []
+
+        def generate(self, messages):
+            self.calls.append(messages)
+            return "SUMMARY-OK"
+
+        def stream(self, messages):
+            return iter([])
+
+    class _BrokenModel:
+        name = "broken"
+
+        def generate(self, messages):
+            raise RuntimeError("model down")
+
+        def stream(self, messages):
+            return iter([])
+
+    def test_summarizer_calls_the_model(self):
+        """摘要器必须真的调用模型，并按 system + user 两条消息的格式传参。"""
+        spy = self._SpyModel()
+        out = HistorySummarizer(spy).summarize_history(
+            [HistoryTurn("q1", "a1"), HistoryTurn("q2", "a2")]
+        )
+        self.assertEqual(out, "SUMMARY-OK")
+        self.assertEqual(len(spy.calls), 1)
+        messages = spy.calls[0]
+        self.assertEqual(messages[0]["role"], "system")
+        self.assertEqual(messages[1]["role"], "user")
+        self.assertIn("q1", messages[1]["content"])   # 旧轮次确实被喂进去了
+
+    def test_summarizer_falls_back_when_model_fails(self):
+        """模型失败时必须降级到规则模板，而不是抛异常或返回空。"""
+        out = HistorySummarizer(self._BrokenModel()).summarize_history(
+            [HistoryTurn("q1", "a1")]
+        )
+        self.assertTrue(out)          # 不是空
+        self.assertIn("q1", out)      # 还带着信息
+        self.assertIn("1", out)       # 带轮数
+
+    def test_summary_slot_outranks_history(self):
+        """摘要优先级必须高于 history，否则超预算时摘要会第一个被裁。"""
+        ctx = ContextEngine(4096, reranker=Reranker()).build(
+            user_input="x",
+            retrieved=[],
+            history=[HistoryTurn(f"q{i}", f"a{i}") for i in range(12)],
+            system_prompt="sys",
+        )
+        prios = {s.kind: s.priority for s in ctx.slots}
+        self.assertIn("summary", prios)
+        self.assertIn("history", prios)
+        self.assertGreater(prios["summary"], prios["history"])
+
+    def test_history_window_follows_config(self):
+        """滑窗轮数必须读 config.HISTORY_MAX_TURNS，而不是硬编码。
+
+        这就是"假旋钮"的回归测试：把配置改小，保留的轮数必须跟着变小。
+        硬编码 max_keep=8 的老实现会让这条测试失败。
+        """
+        original = config.HISTORY_MAX_TURNS
+        try:
+            config.HISTORY_MAX_TURNS = 3
+            ctx = ContextEngine(4096, reranker=Reranker()).build(
+                user_input="x",
+                retrieved=[],
+                history=[HistoryTurn(f"q{i}", f"a{i}") for i in range(7)],
+                system_prompt="sys",
+            )
+            hist = next(s for s in ctx.slots if s.kind == "history")
+            self.assertEqual(hist.content.count("用户："), 3)
+        finally:
+            config.HISTORY_MAX_TURNS = original
 
 
 class RetrieverTest(unittest.TestCase):

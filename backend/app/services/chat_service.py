@@ -15,6 +15,7 @@ from ..agents.orchestrator import AgentOrchestrator
 from ..context.engine import ContextEngine
 from ..context.history import ChatStore, HistoryManager, HistoryTurn
 from ..context.rerank import Reranker
+from ..context.summarizer import HistorySummarizer
 from ..models import get_model_backend
 from ..retrieval.knowledge import KnowledgeBase
 from ..retrieval.retriever import get_retriever
@@ -26,7 +27,11 @@ class AppServices:
         self.retriever = get_retriever()
         self.model = get_model_backend()
         self.store = ChatStore(config.DATA_DIR / "chat_history")
-        self.engine = ContextEngine(config.CONTEXT_TOKEN_BUDGET, reranker=Reranker())
+        self.engine = ContextEngine(
+            config.CONTEXT_TOKEN_BUDGET,
+            reranker=Reranker(),
+            summarizer=HistorySummarizer(self.model),  # ← 新增
+        )
         if seed_kb and not self.retriever.texts:
             self._seed_demo_kb()
 

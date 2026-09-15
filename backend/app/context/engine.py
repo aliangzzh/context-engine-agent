@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from typing import Optional
 
+from .. import config
 from ..schemas import Context, ContextSlot, HistoryTurn, RetrievedChunk
 from .token_budget import TokenBudget, token_len
 
@@ -57,18 +58,16 @@ class ContextEngine:
         tool_results = tool_results or []
 
         # 1) history -> (summary, recent) via sliding window + compression
-        summary_text, recent = (
-            (self.summarizer.render(user_input, history) if False else ("", history))
-        )  # placeholder logic replaced below
-
-        runner = _HistoryRunner(self.summarizer, max_keep=8)
+        runner = _HistoryRunner(self.summarizer, max_keep=config.HISTORY_MAX_TURNS)
         summary_text, recent = runner.run(history)
 
         # 2) build slots (priority = importance when the budget trims)
         slots: list[ContextSlot] = [self._slot("system", system_prompt, priority=100)]
 
         if summary_text and include_summary:
-            slots.append(self._slot("summary", f"（对话摘要：{summary_text}）", priority=5))
+            # 优先级 30：高于 history(25)、低于 tool(60)。
+            # 理由：摘要是压缩过的，单位 token 的信息密度比未压缩的历史更高。
+            slots.append(self._slot("summary", f"（对话摘要：{summary_text}）", priority=30))
 
         if tool_results:
             slots.append(self._slot("tool", "工具返回结果：\n" + self._render_tool_results(tool_results), priority=60))
