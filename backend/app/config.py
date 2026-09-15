@@ -65,6 +65,23 @@ FAISS_PERSIST_DIR = os.getenv(
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "500"))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "50"))
 
+# Storage / DB -------------------------------------------------------------------
+# Conversational history is persisted to a relational store.
+#   * Default: a local SQLite file (stdlib sqlite3, zero deps, offline).
+#   * MySQL: set DATABASE_URL=mysql+pymysql://user:pass@host:3306/dbname
+#            (requires `pip install pymysql` and a running MySQL server).
+# The storage layer is isolated behind ChatStore so the switch is a config change.
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+DB_PATH = DATA_DIR / "app.db"
+
+# Cache --------------------------------------------------------------------------
+# Retrieval results / computed values are cached to avoid repeated embedding calls.
+#   * Default: in-process LRU (stdlib, offline).
+#   * Redis: set REDIS_URL=redis://localhost:6379/0 (requires `pip install redis`).
+REDIS_URL = os.getenv("REDIS_URL", "").strip()
+CACHE_TTL = int(os.getenv("CACHE_TTL", "120"))
+CACHE_MAXSIZE = int(os.getenv("CACHE_MAXSIZE", "256"))
+
 # Fine-tuning --------------------------------------------------------------------
 # Base model family used for the LoRA demo. 0.5B is the fastest to validate the
 # full pipeline; 1.5B is a more credible result and still fits 8 GB in 4-bit.
@@ -104,3 +121,13 @@ def effective_retrieval_backend() -> str:
     if RETRIEVAL_BACKEND == "auto":
         return "dashscope" if DASHSCOPE_API_KEY else "bm25"
     return "bm25"
+
+
+def effective_db_backend() -> str:
+    """Return the relational store backend actually used."""
+    return "mysql" if DATABASE_URL.lower().startswith("mysql") else "sqlite"
+
+
+def effective_cache_backend() -> str:
+    """Return the cache backend actually used (Redis if configured, else LRU)."""
+    return "redis" if REDIS_URL else "lru"

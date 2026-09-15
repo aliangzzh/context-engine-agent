@@ -7,8 +7,6 @@ collapse everything older into a rolling summary.
 """
 from __future__ import annotations
 
-import json
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
@@ -23,43 +21,26 @@ class HistoryTurn:
 
 
 class ChatStore:
-    """A tiny JSON-per-session persistence layer (replaces the naive dump)."""
+    """SQL-backed conversation history (replaces the per-session JSON dump).
 
-    def __init__(self, path: str | Path):
-        self.path = Path(path)
-        self.path.mkdir(parents=True, exist_ok=True)
+    Backed by the relational ``turns`` table (``app.storage.history_store``).
+    Keeps the ``load/save/append`` interface so the rest of the app and the
+    existing unit tests are unchanged; the backend is SQLite by default and can
+    be switched to MySQL via ``DATABASE_URL``.
+    """
 
-    def _file(self, session_id: str) -> Path:
-        # sanitize session id for filesystem safety
-        safe = "".join(c for c in session_id if c.isalnum() or c in "-_")
-        return self.path / (safe or "default")
+    def __init__(self, path: str | Path | None = None, db_path: str | Path | None = None):
+        from ..storage.history_store import SQLChatStore
+        self._store = SQLChatStore(path=path, db_path=db_path)
 
     def load(self, session_id: str) -> list[HistoryTurn]:
-        f = self._file(session_id)
-        if not f.exists():
-            return []
-        try:
-            raw = json.loads(f.read_text(encoding="utf-8"))
-        except Exception:
-            return []
-        turns = []
-        for item in raw:
-            if isinstance(item, dict):
-                turns.append(HistoryTurn(user=item.get("user", ""), assistant=item.get("assistant", "")))
-        return turns
+        return self._store.load(session_id)
 
-    def save(self, session_id: str, turns: list[HistoryTurn]) -> None:
-        f = self._file(session_id)
-        data = [{"user": t.user, "assistant": t.assistant} for t in turns]
-        tmp = f.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        os.replace(tmp, f)
+    def save(self, session_id: str, turns: list[HistoryTurn]) -> list[HistoryTurn]:
+        return self._store.save(session_id, turns)
 
     def append(self, session_id: str, turn: HistoryTurn) -> list[HistoryTurn]:
-        turns = self.load(session_id)
-        turns.append(turn)
-        self.save(session_id, turns)
-        return turns
+        return self._store.append(session_id, turn)
 
 
 class HistoryManager:

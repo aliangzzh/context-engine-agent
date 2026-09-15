@@ -52,6 +52,8 @@ class AppServices:
             chat_backend=config.effective_chat_backend(),
             retrieval_backend=config.effective_retrieval_backend(),
             model=self.model.name,
+            db_backend=config.effective_db_backend(),
+            cache_backend=config.effective_cache_backend(),
         )
 
     # -- chat ------------------------------------------------------------------------

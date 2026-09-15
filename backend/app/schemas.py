@@ -79,6 +79,8 @@ class Health(BaseModel):
     chat_backend: str
     retrieval_backend: str
     model: str = ""
+    db_backend: str = ""      # sqlite | mysql
+    cache_backend: str = ""   # lru | redis
 
 
 class IngestResult(BaseModel):

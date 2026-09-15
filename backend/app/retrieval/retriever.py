@@ -16,6 +16,7 @@ from typing import Optional
 
 from ..schemas import RetrievedChunk
 from .. import config
+from ..storage.cache import get_cache
 
 _TOKEN_RE = re.compile(r"[\u4e00-\u9fff]|[a-zA-Z0-9]+")
 
@@ -103,6 +104,7 @@ class Retriever:
         self.metas: list[dict] = []
         self.bm25 = BM25Index()
         self._emb_store = None
+        self._cache = get_cache()  # cache retrieval results (LRU by default)
         self.load()
 
     # -- storage -----------------------------------------------------------------
@@ -132,10 +134,26 @@ class Retriever:
         self.metas.extend(metas)
         self.bm25.add_documents(texts, metas)
         self._persist()
+        # the underlying corpus changed -> previously cached results are stale
+        self._cache.clear()
 
     # -- search ---------------------------------------------------------------------
     def search(self, query: str, k: Optional[int] = None) -> list[RetrievedChunk]:
         k = k or config.TOP_K
+        # Cache key includes backend + k so switching retrieval/flags is safe.
+        key = f"retrieve:{self.backend}:{k}:{query}"
+        cached = self._cache.get(key)
+        if cached is not None:
+            try:
+                return [RetrievedChunk(**d) for d in cached]
+            except Exception:
+                pass  # bad cache payload -> recompute below
+        result = self._search_uncached(query, k)
+        # Store as JSON-safe dicts so both the LRU and Redis backends work.
+        self._cache.set(key, [c.model_dump() for c in result])
+        return result
+
+    def _search_uncached(self, query: str, k: int) -> list[RetrievedChunk]:
         if self.backend == "dashscope":
             vec = self._embed_search(query, k)
             if vec:
