@@ -11,7 +11,7 @@ it's readable as a real, hand-written persistence layer.
 """
 from __future__ import annotations
 
-import os
+import contextlib
 import sqlite3
 from pathlib import Path
 
@@ -40,6 +40,17 @@ CREATE TABLE IF NOT EXISTS kb_chunks (
 );
 CREATE INDEX IF NOT EXISTS idx_kb_chunks_md5    ON kb_chunks(md5);
 CREATE INDEX IF NOT EXISTS idx_kb_chunks_source ON kb_chunks(source);
+
+CREATE TABLE IF NOT EXISTS feedback (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id     TEXT    NOT NULL,
+    message        TEXT    NOT NULL,
+    answer         TEXT    NOT NULL,
+    reason         TEXT    NOT NULL,
+    note           TEXT    NOT NULL DEFAULT '',
+    created_at     TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_feedback_reason ON feedback(reason);
 """
 
 
@@ -129,7 +140,37 @@ def _init_mysql(conn) -> None:
         " INDEX idx_kb_chunks_md5 (md5), INDEX idx_kb_chunks_source (source)"
         ")"
     )
+    cur.execute(
+        "CREATE TABLE IF NOT EXISTS feedback ("
+        " id BIGINT AUTO_INCREMENT PRIMARY KEY,"
+        " session_id VARCHAR(128) NOT NULL, message TEXT NOT NULL,"
+        " answer TEXT NOT NULL, reason VARCHAR(64) NOT NULL,"
+        " note TEXT NOT NULL, created_at VARCHAR(32) NOT NULL,"
+        " INDEX idx_feedback_reason (reason)"
+        ")"
+    )
     conn.commit()
+
+
+@contextlib.contextmanager
+def transaction(conn):
+    """显式事务：正常提交，异常回滚后原样抛出。
+
+    用于"一组写操作要么全成功、要么全回滚"的场景——例如把一轮对话整体写回
+    ``turns`` 表（先 DELETE 旧轮次再逐条 INSERT，中途失败必须回滚，否则历史
+    会被删掉一半）。
+    """
+    try:
+        yield conn
+    except BaseException:
+        try:
+            conn.rollback()
+        except Exception:  # pragma: no cover - 回滚失败只能记录
+            pass
+        raise
+    else:
+        conn.commit()
+
 
 
 def now() -> str:

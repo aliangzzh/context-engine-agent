@@ -137,6 +137,31 @@ class Retriever:
         # the underlying corpus changed -> previously cached results are stale
         self._cache.clear()
 
+    def replace_all(self, texts: list[str], metas: list[dict]) -> None:
+        """整体替换语料（删除文档后重建索引用）。"""
+        self.texts = list(texts)
+        self.metas = list(metas)
+        self.bm25 = BM25Index()
+        if self.texts:
+            self.bm25.add_documents(self.texts, self.metas)
+        self._persist()
+        self._cache.clear()
+
+    def remove_source(self, source: str) -> int:
+        """删除某个来源的全部 chunk，返回删除条数（索引 + 落盘一起更新）。"""
+        if not source:
+            return 0
+        keep_texts, keep_metas = [], []
+        for text, meta in zip(self.texts, self.metas):
+            if (meta or {}).get("source") == source:
+                continue
+            keep_texts.append(text)
+            keep_metas.append(meta)
+        removed = len(self.texts) - len(keep_texts)
+        if removed:
+            self.replace_all(keep_texts, keep_metas)
+        return removed
+
     # -- search ---------------------------------------------------------------------
     def search(self, query: str, k: Optional[int] = None) -> list[RetrievedChunk]:
         k = k or config.TOP_K

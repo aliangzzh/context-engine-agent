@@ -5,9 +5,8 @@ agent orchestrator can be unit-tested without spinning up the HTTP server.
 """
 from __future__ import annotations
 
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
 from pydantic import BaseModel, Field, computed_field
 
 
@@ -87,3 +86,14 @@ class IngestResult(BaseModel):
     status: str
     chunks: int = 0
     filename: str = ""
+    reason: str = Field(default="", description="skipped/unsupported 时的原因")
+
+
+class FeedbackRequest(BaseModel):
+    """badcase 反馈。"""
+
+    session_id: str = Field(default="default", description="会话 id")
+    message: str = Field(..., min_length=1, description="用户当时的问题")
+    answer: str = Field(default="", description="模型当时的回答")
+    reason: str = Field(..., description="answer_wrong | hallucination | missing_kb | too_slow | other")
+    note: str = Field(default="", max_length=500, description="补充说明")

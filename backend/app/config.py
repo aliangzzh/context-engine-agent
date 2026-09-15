@@ -64,6 +64,10 @@ FAISS_PERSIST_DIR = os.getenv(
 )
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "500"))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "50"))
+# 切分策略：sentence（按句/段边界打包，默认）| fixed（定长滑窗，baseline）
+CHUNK_STRATEGY = os.getenv("CHUNK_STRATEGY", "sentence").lower()
+# 单个上传文件的大小上限（字节）
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(2 * 1024 * 1024)))
 
 # Storage / DB -------------------------------------------------------------------
 # Conversational history is persisted to a relational store.

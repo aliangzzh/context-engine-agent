@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
-from typing import Optional
 
 from .. import config
 from . import db
@@ -65,7 +64,8 @@ class SQLChatStore:
             return [self._mk_turn(r) for r in cur.fetchall()]
 
     def save(self, session_id: str, turns: list) -> list:
-        with self._lock:
+        # 先 DELETE 再逐条 INSERT：必须是一个事务，否则中途失败会把历史删掉一半。
+        with self._lock, db.transaction(self._conn):
             cur = self._cursor()
             cur.execute(f"DELETE FROM turns WHERE session_id={self._ph}", [session_id])
             for t in turns:
@@ -74,19 +74,17 @@ class SQLChatStore:
                     f"VALUES ({self._ph},{self._ph},{self._ph},{self._ph})",
                     [session_id, t.user, t.assistant, db.now()],
                 )
-            self._conn.commit()
             return turns
 
     def append(self, session_id: str, turn) -> list:
-        with self._lock:
+        with self._lock, db.transaction(self._conn):
             cur = self._cursor()
             cur.execute(
                 f"INSERT INTO turns (session_id, user_text, assistant_text, created_at) "
                 f"VALUES ({self._ph},{self._ph},{self._ph},{self._ph})",
                 [session_id, turn.user, turn.assistant, db.now()],
             )
-            self._conn.commit()
-            return self.load(session_id)
+        return self.load(session_id)
 
     def close(self) -> None:
         with self._lock:
