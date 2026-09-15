@@ -12,15 +12,15 @@ conditional edges, ``StateGraph`` and ``checkpointer``. See ``docs/architecture.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Iterator, Optional
+from typing import Iterator, Optional
 
 from ..context.engine import ContextEngine
-from ..context.history import ChatStore, HistoryManager, HistoryTurn
+from ..context.history import HistoryManager, HistoryTurn
 from ..models.base import ModelBackend
 from ..retrieval.retriever import Retriever
 from ..schemas import Context
 from .router import route
-from .tools import get_tool, tool_descriptions
+from .tools import extract_args, get_tool, tool_descriptions
 from .trace import Trace
 
 
@@ -97,6 +97,15 @@ class AgentOrchestrator:
             return f"工具 Agent：调用 {step.split(':')[1]}"
         return step
 
+    @staticmethod
+    def _missing_args_hint(name: str) -> str:
+        """参数没抽出来时，给用户一句可执行的追问，而不是拿整句话去算。"""
+        if name == "get_weather":
+            return "没能从提问里识别出城市名，请补充城市（例如：北京今天天气怎么样）"
+        if name == "calculator":
+            return "没能识别出算式，请给出具体表达式（例如：计算 12*34+5）"
+        return f"工具 {name} 缺少必要参数"
+
     def prepare(self, user_input: str, session_id: str = "default") -> RunResult:
         """Run the routing/retrieval/tool nodes and build the model messages."""
         self.middleware.before_run(user_input)
@@ -118,16 +127,17 @@ class AgentOrchestrator:
                 self.middleware.before_node("tool", state)
                 if tool is None:
                     result = f"未知工具 {name}"
+                    args: dict = {}
                 else:
-                    # simple arg handling: pass the whole input string to the tool
-                    args = {"city": user_input} if name == "get_weather" and user_input else {}
-                    if name == "calculator":
-                        args = {"expression": user_input.replace("计算", "").strip() or user_input}
-                    if name == "current_time":
-                        args = {}
-                    result = tool.run(**args)
+                    # function calling 的 arguments 那一步：从自然语言里抽参数
+                    args = extract_args(name, user_input)
+                    if not args:
+                        result = self._missing_args_hint(name)
+                    else:
+                        result = tool.run(**args)
                 state["tool_results"].append(f"{name} => {result}")
-                trace.add("tool", "tool", f"调用工具 {name}", {"result": result[:120]})
+                trace.add("tool", "tool", f"调用工具 {name}",
+                          {"args": args, "result": result[:120]})
                 self.middleware.after_node("tool", state)
             elif step == "direct":
                 trace.add("direct", "router", "无需检索/工具", {})

@@ -15,10 +15,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
+# 测试期间不要往 stderr 打业务日志（要排查时设 LOG_LEVEL=INFO 即可）
+os.environ.setdefault("LOG_LEVEL", "CRITICAL")
+
 from app import config
 from app.agents.orchestrator import AgentOrchestrator
 from app.agents.router import route
-from app.agents.tools import calculator, get_tool, get_weather
+from app.agents.tools import calculator, extract_args, get_tool, get_weather
 from app.context.engine import ContextEngine
 from app.context.history import ChatStore, HistoryManager, HistoryTurn
 from app.context.rerank import Reranker
@@ -28,6 +31,7 @@ from app.models.fake import FakeModel
 from app.retrieval.knowledge import KnowledgeBase
 from app.retrieval.retriever import Retriever
 from app.schemas import RetrievedChunk
+from app.storage.repo import KbRepository
 
 _SCRATCH = Path(__file__).parent / "_scratch"
 _counter = {"n": 0}
@@ -332,7 +336,8 @@ class RetrieverTest(unittest.TestCase):
         d = _scratch_dir()
         self.addCleanup(_rm, d)
         r = Retriever(backend="bm25", kb_path=d / "kb.json")
-        kb = KnowledgeBase(r)
+        # 用临时库的 repo，避免和其它用例共用默认库造成串味
+        kb = KnowledgeBase(r, repo=KbRepository(db_path=d / "app.db"))
         self.assertEqual(kb.ingest_text("一些知识内容", "test.txt")["status"], "ingested")
         self.assertEqual(kb.ingest_text("一些知识内容", "test.txt")["status"], "skipped")
         self.assertEqual(len(r.texts), 1)
@@ -353,6 +358,35 @@ class ToolsTest(unittest.TestCase):
     def test_tool_registry(self):
         self.assertIsNotNone(get_tool("get_weather"))
         self.assertIsNotNone(get_tool("calculator"))
+
+
+class ToolArgExtractionTest(unittest.TestCase):
+    """回归测试：参数抽取（function calling 的 arguments 那一步）。
+
+    修复前的行为是把整句用户输入当参数传进去，导致
+    ``未找到城市「北京今天天气怎么样」的坐标``、``无法计算：12*34+5 等于多少``。
+    """
+
+    def test_city_from_natural_language(self):
+        self.assertEqual(extract_args("get_weather", "北京今天天气怎么样")["city"], "北京")
+        self.assertEqual(extract_args("get_weather", "帮我查一下上海的天气")["city"], "上海")
+        self.assertEqual(extract_args("get_weather", "明天深圳气温如何")["city"], "深圳")
+
+    def test_city_missing_returns_empty(self):
+        # 抽不出来就返回空 dict，由 orchestrator 给出"请补充城市"的追问
+        self.assertEqual(extract_args("get_weather", "今天天气怎么样"), {})
+        self.assertEqual(extract_args("get_weather", "你好呀"), {})
+
+    def test_expression_from_natural_language(self):
+        self.assertEqual(extract_args("calculator", "12*34+5 等于多少")["expression"], "12*34+5")
+        self.assertEqual(extract_args("calculator", "计算 (3+5)*2")["expression"], "(3+5)*2")
+
+    def test_expression_not_extracted_from_plain_number(self):
+        self.assertEqual(extract_args("calculator", "170厘米是多少尺码"), {})
+
+    def test_calculator_with_extracted_args(self):
+        args = extract_args("calculator", "12*34+5 等于多少")
+        self.assertEqual(calculator(**args), "413")
 
 
 class RouterTest(unittest.TestCase):
