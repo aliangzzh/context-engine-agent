@@ -14,6 +14,7 @@ from .base import ModelBackend
 
 class FakeModel(ModelBackend):
     name = "fake"
+    is_llm = False   # 没有真模型：能力相关的调用方必须走降级，而不是把话术当模型输出
 
     def _compose(self, question: str, refs: list[str], tool_results: list[str]) -> str:
         if tool_results:

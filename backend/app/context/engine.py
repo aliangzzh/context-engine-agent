@@ -95,7 +95,10 @@ class ContextEngine:
 
         budget = TokenBudget(self.budget)
         slot_dicts = [{"kind": s.kind, "content": s.content, "priority": s.priority} for s in slots]
-        kept, trimmed_tokens = budget.allocate(slot_dicts, min_keep=2)
+        # system slot 由 TokenBudget 按 kind 保护（永不裁，且保护所有 system 槽），
+        # 所以数量兜底降到 1：min_keep=2 曾让「只剩 2 个 slot」时裁剪整体失效，
+        # 预算被突破却静默不报（该事实现由 Context.over_budget 上报）。
+        kept, trimmed_tokens = budget.allocate(slot_dicts, min_keep=1)
 
         kept_slots = [self._slot(d["kind"], d["content"], d["priority"]) for d in kept]
 

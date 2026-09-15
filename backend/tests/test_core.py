@@ -82,6 +82,25 @@ class TokenBudgetTest(unittest.TestCase):
         kept, _ = b.allocate(slots, min_keep=1)
         self.assertGreaterEqual(len(kept), 1)
 
+    def test_second_system_slot_is_protected(self):
+        """按 kind 保护：**两条** system slot 都必须留下，而不是只保第一条。
+
+        旧的保护只有一个数量兜底（min_keep），一旦出现第二条 system slot，它就会
+        被当成普通 slot 按优先级裁掉；现在保护按 kind 判定，与 slot 数量/顺序无关。
+        """
+        b = TokenBudget(5)
+        slots = [
+            {"kind": "system", "content": "S" * 100, "priority": 100},
+            {"kind": "system", "content": "T" * 100, "priority": 90},
+            {"kind": "retrieval", "content": "R" * 100, "priority": 20},
+            {"kind": "history", "content": "H" * 100, "priority": 5},
+        ]
+        kept, trimmed = b.allocate(slots, min_keep=1)
+        kinds = [k["kind"] for k in kept]
+        self.assertEqual(kinds.count("system"), 2)       # 第二条 system 也没被裁
+        self.assertEqual(kinds, ["system", "system"])    # 可裁的都被裁掉了
+        self.assertGreater(trimmed, 0)
+
 
 class HistoryTest(unittest.TestCase):
     def setUp(self):
@@ -151,10 +170,29 @@ class ContextEngineTest(unittest.TestCase):
         self.assertEqual(msgs[0]["role"], "system")
 
     def test_over_budget_is_reported(self):
-        """超预算但一条都没裁时，必须如实上报 over_budget（曾经的静默缺陷）。
+        """超预算且已无可裁（只剩受保护的 system slot）时，必须如实上报 over_budget。
 
-        只剩 2 个 slot 时 min_keep=2 会让裁剪完全失效，此时 total 会超出
-        budget 却没有任何提示 —— over_budget 就是让这个事实变得可见。
+        曾经的静默缺陷：裁剪被 min_keep 数量兜底卡死，total 超出 budget 却没有任何
+        提示 —— over_budget 就是让这个事实变得可见。现在 system 按 kind 保护、
+        其余 slot 都能裁，「一条都没裁」只剩「system 提示本身就超预算」这一种情况，
+        它依然必须如实上报。
+        """
+        ctx = self._engine(1).build(
+            user_input="x",
+            retrieved=[],                                      # 没有可裁的 slot
+            history=[],
+            system_prompt="you are a helper",
+        )
+        self.assertGreater(ctx.total_tokens, ctx.budget)   # 确实超了
+        self.assertEqual(ctx.trimmed, 0)                   # 但一条都没裁
+        self.assertTrue(ctx.over_budget)                   # ← 必须如实上报
+
+    def test_trims_down_to_the_system_slot(self):
+        """旧的「只剩 2 个 slot 时裁剪彻底失效」已修：2 个 slot 也要真的裁。
+
+        min_keep=2 且只有 system/retrieval 两条时，循环条件直接不成立，明明可裁的
+        retrieval 却一条都裁不掉（预算被静默突破）。改成「按 kind 保护 system +
+        min_keep=1」后，retrieval 必须被裁掉，上下文里只剩 system。
         """
         ctx = self._engine(1).build(
             user_input="x",
@@ -162,9 +200,8 @@ class ContextEngineTest(unittest.TestCase):
             history=[],
             system_prompt="you are a helper",
         )
-        self.assertGreater(ctx.total_tokens, ctx.budget)   # 确实超了
-        self.assertEqual(ctx.trimmed, 0)                   # 但一条都没裁
-        self.assertTrue(ctx.over_budget)                   # ← 必须如实上报
+        self.assertEqual([s.kind for s in ctx.slots], ["system"])
+        self.assertGreater(ctx.trimmed, 0)
 
     def test_not_over_budget(self):
         """没超预算时 over_budget 必须是 False（避免误报）。"""
@@ -222,6 +259,23 @@ class SummarizerTest(unittest.TestCase):
         self.assertTrue(out)          # 不是空
         self.assertIn("q1", out)      # 还带着信息
         self.assertIn("1", out)       # 带轮数
+
+    def test_offline_backend_degrades_instead_of_expanding(self):
+        """离线 FakeModel 没有摘要能力：必须降级为模板，而不是把旧对话原样放大。
+
+        回归"压缩做成放大"：FakeModel.generate 不认摘要提示词，会返回
+        「【离线演示】…」+ 整段旧对话，使 summary slot 比原文更长（实测 146 > 87
+        tokens），旧轮次同时出现在 summary 和 history 两个槽里，等于重复注入。
+        """
+        turns = [HistoryTurn(user=f"q{i}", assistant=f"a{i}") for i in range(4)]
+        old_text = "\n".join(f"用户：{t.user}\n助手：{t.assistant}" for t in turns)
+
+        out = HistorySummarizer(FakeModel()).summarize_history(turns)
+
+        self.assertTrue(out)                                  # 不是空
+        self.assertNotIn("离线演示", out)                      # 不是离线话术
+        self.assertNotIn("q0", out)                           # 旧对话没有被原样回灌
+        self.assertLess(token_len(out), token_len(old_text))  # 真的压缩了
 
     def test_summary_slot_outranks_history(self):
         """摘要优先级必须高于 history，否则超预算时摘要会第一个被裁。"""

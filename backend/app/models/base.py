@@ -18,6 +18,12 @@ from typing import Iterable
 class ModelBackend(ABC):
     name: str = "base"
 
+    #: True only for backends that really call an LLM. ``FakeModel`` sets this to
+    #: False so capability-dependent callers (e.g. the history summarizer) can
+    #: degrade honestly instead of treating a canned offline reply as model
+    #: output. See ``context/summarizer.py``.
+    is_llm: bool = True
+
     @abstractmethod
     def generate(self, messages: list[dict]) -> str:
         ...
