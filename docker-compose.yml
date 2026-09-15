@@ -1,0 +1,34 @@
+# Docker Compose: Context Engine + Multi-Agent QA
+#
+#   cp backend/.env.example backend/.env   # optionally fill DASHSCOPE_API_KEY
+#   docker compose up --build
+#   # frontend: http://localhost:8080  (Nginx serves SPA + proxies /api to backend)
+#
+# Offline demo works with no API key (BM25 retrieval + deterministic fake model).
+# To use Qwen (DashScope): set DASHSCOPE_API_KEY in backend/.env or the shell.
+services:
+  backend:
+    build: ./backend
+    # Compose auto-loads a `.env` from the project root; you can also export
+    # DASHSCOPE_API_KEY in the shell. Empty key -> offline fake model.
+    environment:
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-}
+      - RETRIEVAL_BACKEND=auto
+      - PORT=8000
+    volumes:
+      - backend_data:/app/data
+    expose:
+      - "8000"
+    # Uncomment to hit the backend API directly while debugging:
+    # ports:
+    #   - "8000:8000"
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
+volumes:
+  backend_data:

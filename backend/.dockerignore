@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Env / secrets
+.env
+
+# Runtime data (mounted as a volume instead)
+data/chat_history/
+data/kb/
+finetune/outputs/
+tests/_scratch/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
