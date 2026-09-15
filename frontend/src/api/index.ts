@@ -19,6 +19,7 @@ export interface ContextPayload {
   total_tokens: number
   budget: number
   trimmed: number
+  over_budget: boolean
 }
 
 export interface StreamDone {

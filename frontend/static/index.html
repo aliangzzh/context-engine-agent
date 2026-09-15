@@ -170,7 +170,7 @@ function renderContext(ctx){
   let h = '<h3>Context Engine 上下文分配</h3>';
   h += `<div class="budget"><div class="bar"><div class="fill" style="width:${pct}%"></div></div>`;
   h += `<div class="meta"><span>${ctx.total_tokens} / ${ctx.budget} tokens ${ctx.trimmed>0?`<span class="trim">（裁剪 ${ctx.trimmed}）</span>`:''}</span><span>${pct}%</span></div></div>`;
-  if(ctx.trimmed>0) h += `<div class="note">⚠️ 超出预算，已按「优先级从低到高」裁剪低优先片段。</div>`;
+  if(ctx.over_budget) h += `<div class="note">⚠️ 上下文超出预算：${ctx.total_tokens} / ${ctx.budget} tokens（已裁剪 ${ctx.trimmed}）</div>`;
   h += '<div class="slots">';
   (ctx.slots||[]).forEach(s=>{
     h += `<div class="slot"><div class="slot-head"><span class="tag t-${s.kind}">${kindLabel[s.kind]||s.kind}</span><span class="prio">prio ${s.priority}</span><span class="tok">${s.tokens} tok</span></div><div class="slot-body">${esc(s.content)}</div></div>`;

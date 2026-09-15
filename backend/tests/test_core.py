@@ -148,6 +148,29 @@ class ContextEngineTest(unittest.TestCase):
         self.assertEqual(msgs[-1], {"role": "user", "content": "如何洗涤"})
         self.assertEqual(msgs[0]["role"], "system")
 
+    def test_over_budget_is_reported(self):
+        """超预算但一条都没裁时，必须如实上报 over_budget（曾经的静默缺陷）。
+
+        只剩 2 个 slot 时 min_keep=2 会让裁剪完全失效，此时 total 会超出
+        budget 却没有任何提示 —— over_budget 就是让这个事实变得可见。
+        """
+        ctx = self._engine(1).build(
+            user_input="x",
+            retrieved=[RetrievedChunk(text="hello world", score=1.0, source="a")],
+            history=[],
+            system_prompt="you are a helper",
+        )
+        self.assertGreater(ctx.total_tokens, ctx.budget)   # 确实超了
+        self.assertEqual(ctx.trimmed, 0)                   # 但一条都没裁
+        self.assertTrue(ctx.over_budget)                   # ← 必须如实上报
+
+    def test_not_over_budget(self):
+        """没超预算时 over_budget 必须是 False（避免误报）。"""
+        ctx = self._engine(4096).build(
+            user_input="x", retrieved=[], history=[], system_prompt="sys"
+        )
+        self.assertFalse(ctx.over_budget)
+
 
 class RetrieverTest(unittest.TestCase):
     def _mk(self):

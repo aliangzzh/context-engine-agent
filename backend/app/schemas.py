@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 
 # --- Chat request / response ----------------------------------------------------
@@ -51,6 +52,12 @@ class Context(BaseModel):
     total_tokens: int = 0
     budget: int = 0
     trimmed: int = Field(default=0, description="Tokens removed to fit budget")
+
+    @computed_field
+    @property
+    def over_budget(self) -> bool:
+        """单一口径的「是否超预算」——由后端算，前端不再自己判断。"""
+        return self.total_tokens > self.budget
 
 
 class ChatReply(BaseModel):

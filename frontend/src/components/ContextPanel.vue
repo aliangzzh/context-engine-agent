@@ -40,8 +40,8 @@ const kindLabels: Record<string, string> = {
         </div>
       </div>
 
-      <div v-if="context.trimmed > 0" class="note">
-        ⚠️ 超出预算，已按「优先级从低到高」裁剪低优先片段（历史摘要/检索片段会先被裁剪）。
+      <div v-if="context.over_budget" class="note">
+        ⚠️ 上下文超出预算：{{ context.total_tokens }} / {{ context.budget }} tokens（已裁剪 {{ context.trimmed }}）
       </div>
 
       <div class="slots">
