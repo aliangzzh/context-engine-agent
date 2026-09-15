@@ -49,7 +49,7 @@ async function send() {
       (t) => { assistant.content += t },
       (d: StreamDone) => {
         context.value = d.context
-        usedTools.value = d.usedTools
+        usedTools.value = d.used_tools
         backend.value = d.backend
       },
       (docs) => { retrievedCount.value = docs.length },

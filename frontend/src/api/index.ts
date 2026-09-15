@@ -30,9 +30,18 @@ export interface StreamDone {
   backend: string
 }
 
+export interface Health {
+  status: 'ok'
+  chat_backend: string
+  retrieval_backend: string
+  model: string
+  db_backend: 'sqlite' | 'mysql' | string
+  cache_backend: 'lru' | 'redis' | string
+}
+
 const BASE = '/api'
 
-export function health(): Promise<any> {
+export function health(): Promise<Health> {
   return fetch('/health').then((r) => r.json())
 }
 

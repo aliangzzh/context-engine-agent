@@ -20,6 +20,7 @@ backend/finetune/outputs/
 # Node
 node_modules/
 frontend/dist/
+*.tsbuildinfo
 
 # IDE / OS
 .idea/
