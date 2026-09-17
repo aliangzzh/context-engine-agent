@@ -291,6 +291,23 @@ class HttpTest(_IsolatedServices):
         with urllib.request.urlopen(req, timeout=30) as resp:
             return resp.status, resp.read(), dict(resp.headers)
 
-
+class UpstreamErrorTest(_IsolatedServices):
+    """模型/上游失败必须报 502xx，而不是 50000（服务端自己的锅）。"""
+    class _BrokenModel:
+        name = "broken"
+        def generate(self, messages):
+            raise RuntimeError("model timeout after 30s")
+        def stream(self, messages):
+            raise RuntimeError("model timeout after 30s")
+    def test_model_failure_reports_upstream_error(self):
+        svc = api.services()
+        saved = svc.model
+        svc.model = self._BrokenModel()
+        try:
+            status, body = api.safe_call(api.handle_chat, {"message": "hi"})
+        finally:
+            svc.model = saved
+        self.assertEqual(status, 502)
+        self.assertEqual(body["code"], int(ErrorCode.MODEL_ERROR))
 if __name__ == "__main__":
     unittest.main()

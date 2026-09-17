@@ -16,6 +16,7 @@ from typing import Iterator, Optional
 
 from ..context.engine import ContextEngine
 from ..context.history import HistoryManager, HistoryTurn
+from ..errors import AppError, ErrorCode
 from ..models.base import ModelBackend
 from ..retrieval.retriever import Retriever
 from ..schemas import Context
@@ -168,7 +169,12 @@ class AgentOrchestrator:
 
     def generate(self, user_input: str, session_id: str = "default") -> RunResult:
         res = self.prepare(user_input, session_id)
-        res.answer = self.model.generate(res.messages)
+        try:
+            res.answer = self.model.generate(res.messages)
+        except AppError:
+            raise
+        except Exception as exc:
+            raise AppError(ErrorCode.MODEL_ERROR, f"模型调用失败：{exc}")
         self.middleware.after_run(res)
         return res
 
@@ -180,9 +186,14 @@ class AgentOrchestrator:
         yield {"type": "retrieved", "data": [d.model_dump() for d in res.retrieved]}
 
         answer_parts: list[str] = []
-        for token in self.model.stream(res.messages):
-            answer_parts.append(token)
-            yield {"type": "token", "data": token}
+        try:
+            for token in self.model.stream(res.messages):
+                answer_parts.append(token)
+                yield {"type": "token", "data": token}
+        except AppError:
+            raise
+        except Exception as exc:
+            raise AppError(ErrorCode.MODEL_ERROR, f"模型调用失败：{exc}")
 
         res.answer = "".join(answer_parts)
         self.middleware.after_run(res)
