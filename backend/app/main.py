@@ -195,3 +195,8 @@ async def feedback_list(page: int = 1, size: int = 10) -> dict:
 async def context(session_id: str) -> dict:
     status, body = await run_in_threadpool(api.handle_context, session_id)
     return body
+
+
+@app.get("/api/ping", tags=["ops"], summary="测试接口")
+async def ping() -> dict:
+    return {"code": 0, "msg": "ok", "data": {"pong": True}}
