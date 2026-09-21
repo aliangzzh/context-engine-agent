@@ -33,3 +33,6 @@ frontend/dist/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# 本地学习笔记（AI 讲解、岗位对照、面试要点等，只留在本机，不上传）
+学习笔记/
