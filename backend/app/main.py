@@ -200,3 +200,9 @@ async def context(session_id: str) -> dict:
 @app.get("/api/ping", tags=["ops"], summary="测试接口")
 async def ping() -> dict:
     return {"code": 0, "msg": "ok", "data": {"pong": True}}
+
+@app.get("/api/echo", tags=["ops"], summary="回显参数")
+async def echo(word: str = "hello", times: int = 1) -> dict:
+    return {"code": 0, "msg": "ok", "data": {"echo": word * times, "word": word, "times": times}}
+
+

@@ -132,7 +132,8 @@ class AgentOrchestrator:
                 else:
                     # function calling 的 arguments 那一步：从自然语言里抽参数
                     args = extract_args(name, user_input)
-                    if not args:
+                    if tool.params and not args:
+                        
                         result = self._missing_args_hint(name)
                     else:
                         result = tool.run(**args)
