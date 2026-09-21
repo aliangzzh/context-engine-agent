@@ -171,7 +171,7 @@ context-engine-agent/
 ├── .github/workflows/    # CI：lint + 测试 + 前端构建 + compose 校验
 ├── docker-compose.yml
 ├── ruff.toml / .editorconfig
-└── docs/                 # 架构、前端、FastAPI 教程、AI 辅助、Code Review
+└── docs/                 # 架构、前端、AI 辅助、Code Review
 ```
 
 ## 文档
@@ -182,8 +182,6 @@ context-engine-agent/
 | `docs/frontend.md` | 前端实现说明，以及切换主流方案的步骤 |
 | `docs/ai-assisted.md` | AI 辅助开发的记录与边界 |
 | `docs/code-review.md` | 代码审查记录 |
-| `docs/fastapi-入门.md`、`docs/fastapi-详解/` | FastAPI 从零接入的完整教程与实跑记录 |
-| `docs/frontend-新手快速上手.md` | 前端上手说明 |
 
 ## 设计取舍
 
