@@ -68,7 +68,6 @@ def main():
 
     base = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=dtype, trust_remote_code=True).to(device)
 
-    rows = []
     # base scores
     base_rows = []
     for q, ref in EVAL:
