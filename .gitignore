@@ -9,7 +9,10 @@ backend/tests/_scratch/
 
 # Env / secrets
 .env
+.env.local
+.env.*.local
 backend/.env
+frontend/.env.local
 
 # Data
 backend/data/chat_history/
