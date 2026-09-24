@@ -132,24 +132,43 @@ def current_time() -> str:
 
 # --- 参数抽取（自然语言 -> 工具参数） -------------------------------------------------
 _CN_DIGITS = str.maketrans("０１２３４５６７８９", "0123456789")
+#: 全角括号/运算符归一化：不还原的话「（18+6）乘以3」会被抽成 "18+6"，算出 24（错答案）
+_FULLWIDTH = str.maketrans({
+    "（": "(", "）": ")", "［": "[", "］": "]",
+    "＋": "+", "－": "-", "＊": "*", "／": "/", "％": "%", "．": ".",
+    "，": ",", "、": ",", "。": ".", "：": ":",
+})
 _CN_OPS = {"加上": "+", "加": "+", "减去": "-", "减": "-", "乘以": "*", "乘": "*",
            "除以": "/", "除": "/", "的平方": "**2"}
 _EXPR_RUN_RE = re.compile(r"[0-9\(\)\.\s\+\-\*/%]+")
 _EXPR_LEAD = re.compile(r"^[^\d\(]+")
 _EXPR_TAIL = re.compile(r"[^\d\)]+$")
-_CITY_RE = re.compile(r"([\u4e00-\u9fff]{2,8}?)(?:今天|明天|后天|现在)?(?:的)?(?:天气|气温|温度|下雨|冷不冷|热不热)")
+_CITY_RE = re.compile(
+    r"([\u4e00-\u9fff]{2,8}?)(?:今天|明天|后天|现在)?(?:的)?"
+    r"(?:会不会|会|要|可能)?"
+    r"(?:天气|气温|温度|多少度|几度|下雨|下雪|冷不冷|热不热|冷吗|热吗)"
+)
 _EN_CITY_RE = re.compile(r"(?:weather|temperature)\s+(?:in|of|at)?\s*([A-Za-z][A-Za-z\s\-]{1,20})", re.I)
 _WEATHER_NOISE = re.compile(
     r"(请问|帮我|查一下|查询|看一下|告诉我|今天|明天|后天|现在|的|天气|气温|温度|怎么样|如何|怎样|"
-    r"下雨|冷不冷|热不热|呢|吗|？|\?|，|,|。|！|!)"
+    r"多少度|几度|下雨|下雪|冷不冷|热不热|会|要|呢|吗|？|\?|，|,|。|！|!)"
 )
 _GREETING = re.compile(r"(你好|您好|谢谢|哈喽|hi|hello|在吗)", re.I)
 _PLACE_TAIL = re.compile(r"(市|县|区|省|州|国|镇|乡)$")
+#: 兜底路径：从「深圳明天会下雨吗」里截到第一个时间/体感/疑问词之前，取「深圳」。
+#: 旧版是"逐个删噪声词再拼回去"，「会」没在噪声表里就留下「深圳会」这种脏城市名。
+_WEATHER_HEAD = re.compile(
+    r"(今天|明天|后天|现在|会不会|会|要|可能|的|天气|气温|温度|多少度|几度|下雨|下雪|"
+    r"冷不冷|热不热|冷|热|暖和|呢|吗|？|\?|，|,|。|！|!)"
+)
+_QUERY_PREFIX = re.compile(r"^(请问|麻烦|帮我|帮忙|我想|我要|想知道|查一下|查询|看一下|告诉我)+")
+#: 兜底抽地名时排除"动宾短语残渣"：「帮我查一下温度」截出来是「查一下」，不是城市
+_NOT_PLACE = re.compile(r"(查|看|告|诉|知|道|问|算|写|怎|么|样)")
 
 
 def _extract_expression(text: str) -> str:
     """从「12乘34加5等于多少」里抽出可计算的表达式。"""
-    s = (text or "").translate(_CN_DIGITS)
+    s = (text or "").translate(_CN_DIGITS).translate(_FULLWIDTH)
     for cn, op in sorted(_CN_OPS.items(), key=lambda kv: -len(kv[0])):
         s = s.replace(cn, op)
 
@@ -175,9 +194,10 @@ def _extract_city(text: str) -> str:
             city = _WEATHER_NOISE.sub("", m.group(1)).strip()
             if city:
                 return city
-    # 兜底：整句去掉噪声后，只接受"像地名"的短串（带行政区后缀，且不是寒暄）
-    fallback = _WEATHER_NOISE.sub("", s).strip()
-    if _GREETING.search(fallback) or not (2 <= len(fallback) <= 6):
+    # 兜底：截到第一个时间/体感/疑问词之前，只接受"像地名"的短串（带行政区后缀，且不是寒暄）
+    fallback = _QUERY_PREFIX.sub("", s)
+    fallback = _WEATHER_HEAD.split(fallback)[0].strip()
+    if _GREETING.search(fallback) or _NOT_PLACE.search(fallback) or not (2 <= len(fallback) <= 6):
         return ""
     if _PLACE_TAIL.search(fallback) or re.fullmatch(r"[\u4e00-\u9fff]{2,6}", fallback):
         return fallback
