@@ -1,0 +1,227 @@
+{
+  "version": 1,
+  "description": "Agent 效果评测集：30 题五类（路由 / 工具参数 / 检索召回 / 答案事实覆盖 / 兜底与拒答）。语料见 eval/corpus/（10 篇，含 4 篇干扰文档），与线上知识库解耦，保证分数可复现。",
+  "categories": {
+    "routing": "意图路由：该走哪个 Agent（工具 / 检索 / 直接作答）",
+    "tool_args": "function calling 的 arguments 抽取：从自然语言里抽出的工具参数对不对",
+    "retrieval": "RAG 召回：期望来源是否进入 top-3（并统计 hit@1 / MRR）",
+    "answer_grounding": "答案事实覆盖：期望事实是否出现在最终答案里",
+    "guard": "兜底与拒答：知识库不覆盖时是否明说，而不是硬答/编造"
+  },
+  "cases": [
+    {
+      "id": "R01",
+      "category": "routing",
+      "question": "北京今天天气怎么样？",
+      "expect": {"plan": ["tool:get_weather"]},
+      "note": "天气意图 → 天气工具"
+    },
+    {
+      "id": "R02",
+      "category": "routing",
+      "question": "帮我算一下 12*34+5 等于多少",
+      "expect": {"plan": ["tool:calculator"]},
+      "note": "算式意图 → 计算器"
+    },
+    {
+      "id": "R03",
+      "category": "routing",
+      "question": "现在几点了？",
+      "expect": {"plan": ["tool:current_time"]},
+      "note": "时间意图 → 时间工具"
+    },
+    {
+      "id": "R04",
+      "category": "routing",
+      "question": "身高170体重120斤穿什么尺码？",
+      "expect": {"plan": ["retrieve"]},
+      "note": "知识库意图 → 检索"
+    },
+    {
+      "id": "R05",
+      "category": "routing",
+      "question": "你好，请介绍一下你能做什么",
+      "expect": {"plan": ["direct"]},
+      "note": "寒暄/自我介绍不检索（BM25 字符级命中会把闲聊带偏，是重点观察项）"
+    },
+    {
+      "id": "R06",
+      "category": "routing",
+      "question": "成都今天冷吗？",
+      "expect": {"plan": ["tool:get_weather"]},
+      "note": "冷暖句式也属天气意图"
+    },
+    {
+      "id": "R07",
+      "category": "routing",
+      "question": "上海天气怎么样？另外帮我算一下 8*7",
+      "expect": {"plan": ["tool:get_weather", "tool:calculator"]},
+      "note": "多意图：天气 + 计算都要走到（单意图路由会漏掉一个）"
+    },
+    {
+      "id": "R08",
+      "category": "routing",
+      "question": "加绒牛仔怎么洗？",
+      "expect": {"plan": ["retrieve"]},
+      "note": "洗护类问题 → 检索"
+    },
+
+    {
+      "id": "T01",
+      "category": "tool_args",
+      "question": "北京今天天气怎么样？",
+      "expect": {"tool": "get_weather", "city": "北京"},
+      "note": "标准句式抽城市"
+    },
+    {
+      "id": "T02",
+      "category": "tool_args",
+      "question": "帮我查一下成都的天气",
+      "expect": {"tool": "get_weather", "city": "成都"},
+      "note": "口语化前缀（帮我查一下）不能混进城市名"
+    },
+    {
+      "id": "T03",
+      "category": "tool_args",
+      "question": "上海现在气温多少度？",
+      "expect": {"tool": "get_weather", "city": "上海"},
+      "note": "气温句式"
+    },
+    {
+      "id": "T04",
+      "category": "tool_args",
+      "question": "成都今天冷吗？",
+      "expect": {"tool": "get_weather", "city": "成都"},
+      "note": "「冷不冷/冷吗」句式抽城市，别把「冷」带进城市名"
+    },
+    {
+      "id": "T05",
+      "category": "tool_args",
+      "question": "计算 12*34+5",
+      "expect": {"tool": "calculator", "value": "413"},
+      "note": "算式抽取（比较计算结果，不比对表达式写法）"
+    },
+    {
+      "id": "T06",
+      "category": "tool_args",
+      "question": "12乘34加5等于多少？",
+      "expect": {"tool": "calculator", "value": "413"},
+      "note": "中文运算符归一化"
+    },
+    {
+      "id": "T07",
+      "category": "tool_args",
+      "question": "（18+6）乘以3 等于几",
+      "expect": {"tool": "calculator", "value": "72"},
+      "note": "全角括号：括号不参与抽取会算成 18+6=24（错误答案），正确是 (18+6)*3=72"
+    },
+
+    {
+      "id": "K01",
+      "category": "retrieval",
+      "question": "身高170，体重120斤，推荐什么尺码？",
+      "expect": {"source": "尺码推荐.txt"},
+      "note": "与「常见问题.txt」争抢「尺码」关键词"
+    },
+    {
+      "id": "K02",
+      "category": "retrieval",
+      "question": "加绒牛仔裤怎么洗才不会掉绒？",
+      "expect": {"source": "洗涤养护.txt"},
+      "note": "洗护召回"
+    },
+    {
+      "id": "K03",
+      "category": "retrieval",
+      "question": "春季适合穿什么颜色？",
+      "expect": {"source": "颜色选择.txt"},
+      "note": "颜色召回"
+    },
+    {
+      "id": "K04",
+      "category": "retrieval",
+      "question": "德绒材质的衣服可以高温熨烫吗？",
+      "expect": {"source": "洗涤养护.txt"},
+      "note": "与「材质说明.txt」争抢「材质」"
+    },
+    {
+      "id": "K05",
+      "category": "retrieval",
+      "question": "买回来不合适能退吗？",
+      "expect": {"source": "售后政策.txt"},
+      "note": "口语化提问召回售后政策（与「常见问题.txt」争抢「退换」）"
+    },
+    {
+      "id": "K06",
+      "category": "retrieval",
+      "question": "餐桌放在仓库哪个位置？",
+      "expect": {"source": "库存库位.txt"},
+      "note": "「餐桌」在材质说明里也出现，考位置意图的区分"
+    },
+    {
+      "id": "K07",
+      "category": "retrieval",
+      "question": "衣柜是什么板材，环保吗？",
+      "expect": {"source": "材质说明.txt"},
+      "note": "板材/环保召回"
+    },
+
+    {
+      "id": "A01",
+      "category": "answer_grounding",
+      "question": "身高170体重120斤穿什么尺码？",
+      "expect": {"must_contain": ["M码", "L码"]},
+      "note": "答案要覆盖尺码表（离线 fake 模型回放检索片段，故此项衡量事实是否进入答案）"
+    },
+    {
+      "id": "A02",
+      "category": "answer_grounding",
+      "question": "计算 12*34+5",
+      "expect": {"must_contain": ["413"]},
+      "note": "工具结果要进入最终答案（端到端）"
+    },
+    {
+      "id": "A03",
+      "category": "answer_grounding",
+      "question": "加绒牛仔怎么洗涤？",
+      "expect": {"must_contain": ["30℃"]},
+      "note": "洗护事实进入答案"
+    },
+    {
+      "id": "A04",
+      "category": "answer_grounding",
+      "question": "买回来不合适能退吗？",
+      "expect": {"must_contain": ["7天"]},
+      "note": "售后事实进入答案"
+    },
+    {
+      "id": "A05",
+      "category": "answer_grounding",
+      "question": "衣柜是什么板材，环保吗？",
+      "expect": {"must_contain": ["E0"]},
+      "note": "材质事实进入答案"
+    },
+
+    {
+      "id": "G01",
+      "category": "guard",
+      "question": "你们支持花呗分期付款吗？",
+      "expect": {"abstain": true, "forbid": ["支持花呗", "可以分期", "12期", "3期", "免息"]},
+      "note": "知识库不覆盖支付方式：不能把「会员积分」片段当答案，也不能编分期承诺"
+    },
+    {
+      "id": "G02",
+      "category": "guard",
+      "question": "帮我查一下天气",
+      "expect": {"ask_for_args": true, "tool": "get_weather"},
+      "note": "缺城市参数：应追问补参，而不是把整句话当城市去调工具"
+    },
+    {
+      "id": "G03",
+      "category": "guard",
+      "question": "你们公司去年营收多少？",
+      "expect": {"abstain": true, "forbid": ["营业收入", "营收", "净利润", "亿", "万元"]},
+      "note": "超出知识库范围的问题不能编数字"
+    }
+  ]
+}

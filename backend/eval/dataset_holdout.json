@@ -1,0 +1,115 @@
+{
+  "version": 1,
+  "description": "留出集（hold-out）：在阈值/策略标定**之后**另写的一批用例，只用来检验泛化，不参与调参。它不进 CI 回归门；跑出的失败项作为「已知边界」记录在 docs/evaluation.md。",
+  "categories": {
+    "routing": "意图路由",
+    "tool_args": "工具参数抽取",
+    "retrieval": "RAG 召回",
+    "answer_grounding": "答案事实覆盖",
+    "guard": "兜底与拒答"
+  },
+  "cases": [
+    {
+      "id": "HR01",
+      "category": "routing",
+      "question": "深圳明天会下雨吗？",
+      "expect": {"plan": ["tool:get_weather"]},
+      "note": "下雨句式 → 天气工具"
+    },
+    {
+      "id": "HR02",
+      "category": "routing",
+      "question": "帮我算一下 250 除以 5",
+      "expect": {"plan": ["tool:calculator"]},
+      "note": "中文除法 + 空格分隔数字"
+    },
+    {
+      "id": "HR03",
+      "category": "routing",
+      "question": "谢谢，你回答得挺好",
+      "expect": {"plan": ["direct"]},
+      "note": "道谢类闲聊不检索"
+    },
+
+    {
+      "id": "HT01",
+      "category": "tool_args",
+      "question": "深圳明天会下雨吗？",
+      "expect": {"tool": "get_weather", "city": "深圳"},
+      "note": "明天 + 下雨 句式抽城市"
+    },
+    {
+      "id": "HT02",
+      "category": "tool_args",
+      "question": "帮我算一下 250 除以 5",
+      "expect": {"tool": "calculator", "value": "50"},
+      "note": "中文除法归一化"
+    },
+    {
+      "id": "HT03",
+      "category": "tool_args",
+      "question": "重庆今天多少度？",
+      "expect": {"tool": "get_weather", "city": "重庆"},
+      "note": "口语化的「多少度」——开发集中没覆盖这个说法，看泛化"
+    },
+
+    {
+      "id": "HK01",
+      "category": "retrieval",
+      "question": "纯棉保暖内衣能用漂白剂吗？",
+      "expect": {"source": "洗涤养护.txt"},
+      "note": "换一套说法问洗护"
+    },
+    {
+      "id": "HK02",
+      "category": "retrieval",
+      "question": "科技布沙发耐脏吗？",
+      "expect": {"source": "材质说明.txt"},
+      "note": "科技布/沙发 → 材质说明（安装服务里有「沙发」以外的干扰）"
+    },
+    {
+      "id": "HK03",
+      "category": "retrieval",
+      "question": "积分能抵扣多少钱？",
+      "expect": {"source": "会员积分.txt"},
+      "note": "非主营品类（会员）也能召回"
+    },
+
+    {
+      "id": "HA01",
+      "category": "answer_grounding",
+      "question": "搭配颜色有什么讲究？",
+      "expect": {"must_contain": ["三色原则"]},
+      "note": "搭配规则进入答案"
+    },
+    {
+      "id": "HA02",
+      "category": "answer_grounding",
+      "question": "积分怎么算？",
+      "expect": {"must_contain": ["100积分"]},
+      "note": "积分规则进入答案"
+    },
+
+    {
+      "id": "HG01",
+      "category": "guard",
+      "question": "能不能用花呗付款？",
+      "expect": {"abstain": true, "forbid": ["可以分期", "免息", "12期", "支持花呗"]},
+      "note": "换个说法问支付方式，仍然不能硬答"
+    },
+    {
+      "id": "HG02",
+      "category": "guard",
+      "question": "帮我查一下天气怎么样",
+      "expect": {"ask_for_args": true, "tool": "get_weather"},
+      "note": "缺城市 → 追问"
+    },
+    {
+      "id": "HG03",
+      "category": "guard",
+      "question": "你们老板是谁？",
+      "expect": {"abstain": true, "forbid": ["老板是", "创始人"]},
+      "note": "与知识库无关的个人信息问题"
+    }
+  ]
+}

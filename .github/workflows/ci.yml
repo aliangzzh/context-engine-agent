@@ -37,6 +37,14 @@ jobs:
         working-directory: backend
         run: python -m unittest discover -s tests -v
 
+      - name: Agent eval regression gate
+        working-directory: backend
+        run: |
+          python -m eval.run --check --verbose
+          echo "--- hold-out set (not a gate, records generalisation gaps) ---"
+          python -m eval.run --dataset dataset_holdout.json || true
+          python -m eval.run --dataset dataset_holdout2.json || true
+
   frontend-build:
     name: Frontend build (type-check + Vite)
     runs-on: ubuntu-latest
