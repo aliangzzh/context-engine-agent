@@ -20,6 +20,23 @@ from ..storage.cache import get_cache
 
 _TOKEN_RE = re.compile(r"[\u4e00-\u9fff]|[a-zA-Z0-9]+")
 
+#: 领域同义词扩展（查询侧）。
+#: 来自评测集失败分析：A04「买回来不合适能退吗？」在字符级 BM25 下，
+#: 「合适」这类高频组合词给出的证据比「退」还强，导致售后政策掉到第 2 名。
+#: 中文换货/退换是同一意图，把「退」扩成「退+换」，售后政策文档（含"退换"）得分
+#: 就能超过颜色文档（含"合适"）。索引与查询共用 _TOKEN_RE，所以扩展只能加字，不能加词。
+_QUERY_EXPAND: dict[str, tuple[str, ...]] = {
+    "退": ("换",),
+}
+
+
+def _expand_query(tokens: set[str]) -> set[str]:
+    out = set(tokens)
+    for term, extra in _QUERY_EXPAND.items():
+        if term in tokens:
+            out.update(extra)
+    return out
+
 
 def _tok(text: str) -> set[str]:
     return set(_TOKEN_RE.findall(text.lower()))
@@ -74,7 +91,7 @@ class BM25Index:
         return score
 
     def search(self, query: str, k: int = 3) -> list[RetrievedChunk]:
-        q = _tok(query)
+        q = _expand_query(_tok(query))
         if not q or self._n == 0:
             return []
         scored = [(self._score(q, i), i) for i in range(self._n)]

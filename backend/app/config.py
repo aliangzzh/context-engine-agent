@@ -54,6 +54,13 @@ HISTORY_MAX_TURNS = int(os.getenv("HISTORY_MAX_TURNS", "8"))   # sliding window
 HISTORY_SUMMARY_TOKENS = int(os.getenv("HISTORY_SUMMARY_TOKENS", "300"))
 TOP_K = int(os.getenv("TOP_K", "3"))
 
+# 相关性门控 ---------------------------------------------------------------------
+# BM25 是召回器不是判定器（字符级倒排几乎什么都能召回一点分）。检索结果只有在
+# 内容词覆盖率 ≥ 该阈值、且命中至少 2 个内容词时，才算"知识库真的覆盖了这个问题"，
+# 否则不塞进上下文，改为明确兜底（不硬答、不编造）。
+# 默认值在 eval/ 评测集上标定；换语料/换模型后应重新标定（见 docs/evaluation.md）。
+RELEVANCE_MIN_COVERAGE = float(os.getenv("RELEVANCE_MIN_COVERAGE", "0.35"))
+
 # Retrieval ---------------------------------------------------------------------
 # Default backend is bm25 (pure-python, offline). Set RETRIEVAL_BACKEND=dashscope
 # to use embedding similarity + FAISS when DASHSCOPE_API_KEY is set.

@@ -14,8 +14,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Iterator, Optional
 
+from .. import config
 from ..context.engine import ContextEngine
 from ..context.history import HistoryManager, HistoryTurn
+from ..context.rerank import is_relevant
 from ..errors import AppError, ErrorCode
 from ..models.base import ModelBackend
 from ..retrieval.retriever import Retriever
@@ -62,6 +64,11 @@ class AgentOrchestrator:
         "你是一名专业的企业知识问答助手。请优先基于「参考资料」回答，"
         "如果参考资料为空则礼貌说明。若使用了工具，请结合工具返回结果作答。"
     )
+    #: 检索为空（知识库覆盖不到）时追加的兜底指令：不硬答、不编造
+    _NO_KB_HINT = (
+        "（注意：知识库中没有检索到与本次问题相关的内容，请如实告知用户"
+        "暂无相关资料，不要凭猜测或编造内容作答。）"
+    )
 
     def __init__(
         self,
@@ -78,7 +85,14 @@ class AgentOrchestrator:
         self.middleware = middleware or Middleware()
 
     def _route_steps(self, user_input: str) -> list[str]:
-        kb_relevant = bool(self.retriever.search(user_input, k=1))
+        """路由时判断"知识库是否真的覆盖这个问题"。
+
+        旧版用 ``bool(retriever.search(q, k=1))`` —— 字符级 BM25 几乎对任何问句
+        都能返回一条（共享一两个汉字就有分），于是闲聊也被判成"要检索"。
+        现在改成内容词覆盖率门控（见 ``context/rerank.py``）。
+        """
+        docs = self.retriever.search(user_input, k=config.TOP_K)
+        kb_relevant = any(is_relevant(user_input, d.text) for d in docs)
         return route(user_input, kb_relevant)
 
     def plan(self, user_input: str) -> list[dict]:
@@ -119,8 +133,20 @@ class AgentOrchestrator:
             if step == "retrieve":
                 self.middleware.before_node("retrieve", state)
                 docs = self.retriever.search(user_input, k=None)
-                state["retrieved"] = docs
-                trace.add("retrieve", "retrieve", f"检索到 {len(docs)} 条知识", {"docs": [d.text[:80] for d in docs]})
+                # 相关性门控：低相关的召回不进上下文（宁可明说没有，也不要硬答）
+                kept = [d for d in docs if is_relevant(user_input, d.text)]
+                state["retrieved"] = kept
+                if not kept:
+                    state["no_kb"] = True
+                trace.add(
+                    "retrieve", "retrieve",
+                    f"检索到 {len(docs)} 条，相关性门控保留 {len(kept)} 条",
+                    {
+                        "docs": [d.text[:80] for d in kept],
+                        "dropped": [f"{d.source}({d.score})" for d in docs if d not in kept],
+                        "threshold": config.RELEVANCE_MIN_COVERAGE,
+                    },
+                )
                 self.middleware.after_node("retrieve", state)
             elif step.startswith("tool:"):
                 name = step.split(":", 1)[1]
@@ -146,11 +172,12 @@ class AgentOrchestrator:
 
         # hand user request to the Context Engine for assembly
         history_turns = self.history.load()
+        system_prompt = self._SYSTEM + (self._NO_KB_HINT if state.get("no_kb") else "")
         ctx = self.engine.build(
             user_input=user_input,
             retrieved=state["retrieved"],
             history=history_turns,
-            system_prompt=self._SYSTEM,
+            system_prompt=system_prompt,
             tool_results=state["tool_results"],
         )
         messages = self.engine.render_messages(ctx, user_input)
