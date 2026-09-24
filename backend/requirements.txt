@@ -5,10 +5,12 @@ pydantic>=2.6
 python-dotenv>=1.0
 requests>=2.31
 
-# --- Optional: upgrade retrieval to embedding similarity (needs DASHSCOPE_API_KEY) ---
-# langchain-community>=0.2
-# langchain-core>=0.2
-# faiss-cpu
+# --- 可选：接入真模型 / 向量检索 / 微调 / 精确 token 计数 ---
+# 这些装好才生效；只填 DASHSCOPE_API_KEY 而不装依赖，后端会「静默退回离线 fake 模型」
+# （不报错，/health 里 model 字段仍是 fake —— 见 README 快速开始）。
+
+# 后台管理真模型（langchain-community 依赖 langchain-core）：
+#   pip install -r requirements-llm.txt
 
 # --- Optional: local fine-tuned model inference (needs GPU for training) -------------
 # torch

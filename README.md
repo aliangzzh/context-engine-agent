@@ -15,6 +15,7 @@
 - **LoRA/QLoRA 微调**：`Qwen2.5` 领域微调管线 + 前后对比评测 + 导出合并模型。
 - **存储与缓存**：`turns` / `kb_chunks` / `feedback` 三张表（默认 SQLite，`DATABASE_URL` 可切 MySQL）+ 检索/聚合缓存（默认 LRU，`REDIS_URL` 可切 Redis），写操作走事务。
 - **接口工程化**：统一响应体 `{code,msg,data}` + 分段错误码 + 结构化日志（request_id / 耗时）+ OpenAPI 文档 + 85+ 单元与接口测试。
+- **效果评测与回归门**：`backend/eval/` 自带 10 篇独立语料（含 4 篇干扰文档）+ 30 题五类题库（意图路由 / 工具参数 / RAG 召回 / 答案事实 / 兜底拒答）+ 2 套留出集；零依赖跑分器输出分类指标与逐条失败归因，`--check` 与冻结基线对比做 CI 回归门。真实消融数据见 `docs/evaluation.md`（总通过率 0.733 → 1.000）。
 - **前端三个页面**：对话（SSE 流式 + 上下文/Agent 面板）、知识库管理（上传 / 表单校验 / 列表分页 / 删除弹窗）、运行看板（图表）。离线环境用自研轻量组件，切换方案见 `docs/frontend.md`。
 - **部署**：Dockerfile × 2 + Nginx 反代（SSE 关缓冲）+ docker compose + GitHub Actions（lint / 测试 / 前端构建 / compose 校验）。
 
@@ -24,16 +25,37 @@
 
 ```bash
 cd backend
-python run.py                # 零依赖 stdlib 服务器，http://localhost:8000
+
+# 建虚拟环境并激活
+python -m venv .venv
+.venv\Scripts\activate            # Windows
+# source .venv/bin/activate       # macOS / Linux
+
+# 安装依赖
+pip install -r requirements.txt
+
+# 启动（零依赖 stdlib 服务器）
+python run.py                     # http://localhost:8000
 ```
 
-- **无需安装任何包**也能跑（base 解释器自带 pydantic / python-dotenv / requests）：
-  使用 `server.py`（纯 stdlib HTTP 服务器）提供静态 UI + JSON/SSE API。
-- 可选：装 FastAPI 参考实现（需联网 `pip install fastapi uvicorn`），然后
-  `uvicorn app.main:app`；逻辑与 `server.py` 完全一致（都调用 `app/api.py`），
-  并且 `/docs` 就是可直接交给前端的接口文档。
-- 不配置任何 key 也能跑（离线 `fake` 模型 + BM25 检索）。
-- 想用通义千问：复制 `backend/.env.example` 为 `backend/.env`，填入 `DASHSCOPE_API_KEY`。
+- **不配置任何 API key 也能跑通全链路**：默认使用离线 `fake` 模型 + BM25 检索，
+  路由 / 上下文引擎（预算裁剪 + 滑窗摘要）/ 工具调用 / SSE 流式 / 运行看板 都能演示。
+  注意离线模型的回答会带 `【离线演示】` 前缀——它只回显上下文，不生成真实答案。
+- 想要 FastAPI 版（含 `/docs` Swagger 文档）：`pip install fastapi uvicorn` 后
+  运行 `uvicorn app.main:app`；逻辑与 `server.py` 完全一致（都调用 `app/api.py`），
+  `/docs` 就是可直接交给前端的接口文档。
+
+**接入真模型（通义千问）需要两步，缺一不可：**
+
+```bash
+pip install -r requirements-llm.txt      # ① 装依赖
+cp .env.example .env                     # ② 填 DASHSCOPE_API_KEY=sk-xxx
+```
+
+> ⚠️ **只填 key 而不装依赖，项目会静默退回离线模型**——不报错，界面上仍显示
+> `qwen_api`。这是最容易踩的坑。验证方法：`curl http://localhost:8000/health`，
+> 看 **`model`** 字段是否为 `qwen_api`；若 `chat_backend` 是 `qwen_api` 但
+> `model` 是 `fake`，就说明依赖没装。
 
 ### 2. 前端（Node.js / Vue3）
 
@@ -85,9 +107,10 @@ docker compose up --build
 
 **CI（`.github/workflows/ci.yml`）**：push / PR 时跑
 1. 后端 Lint（`ruff check backend`）
-2. 后端单元测试（`python -m unittest discover -s tests`）
-3. 前端构建（`vue-tsc` 类型检查 + `vite build`）
-4. 校验 `docker compose build` 可成功
+2. 后端单元测试（`python -m unittest discover -s tests`，含评测回归门）
+3. Agent 效果评测回归门（`python -m eval.run --check`）+ 打印两套留出集
+4. 前端构建（`vue-tsc` 类型检查 + `vite build`）
+5. 校验 `docker compose build` 可成功
 
 > `frontend/package-lock.json` 已提交，所以 Docker / CI 用 `npm ci` 做可复现构建。
 
@@ -133,16 +156,20 @@ docker compose up --build
 
 ```bash
 cd backend
-python -m unittest discover -s tests -q      # 85 个测试：核心 / 存储 / 接口
+python -m unittest discover -s tests -q      # 103 个测试：核心 / 存储 / 接口 / 评测
 pip install ruff && ruff check backend       # Lint（同一份配置也在 CI 里跑）
+
+python -m eval.run                           # Agent 效果评测（30 题开发集）
+python -m eval.run --check                   # 与 baseline.json 比，回退则 exit 1
 
 cd ../frontend
 npm run typecheck                            # vue-tsc 类型检查
 npm run lint                                 # 需要先装 eslint（见 eslint.config.js 头部说明）
 ```
 
-测试分三层：`test_core.py`（上下文引擎 / 摘要 / 工具参数抽取）、`test_storage.py`
-（SQL 读写 / 分页 / 事务回滚 / 缓存 / 跨线程）、`test_api.py`（handler 层 + 真起服务器的 HTTP 层）。
+测试分三层 + 评测：`test_core.py`（上下文引擎 / 摘要 / 工具参数抽取）、`test_storage.py`
+（SQL 读写 / 分页 / 事务回滚 / 缓存 / 跨线程）、`test_api.py`（handler 层 + 真起服务器的 HTTP 层）、
+`test_eval.py`（题集完整性 + 回归门 + 每个优化点的定点单测）。
 
 ## 目录结构
 
@@ -166,7 +193,8 @@ context-engine-agent/
 │   ├── server.py         # 零依赖 stdlib HTTP 服务器
 │   ├── mcp_server.py     # 零依赖 MCP Server（JSON-RPC 2.0 over stdio），复用已有工具
 │   ├── finetune/         # ③ LoRA/QLoRA 微调管线
-│   └── tests/            # 单元测试 + 接口测试
+│   ├── eval/             # ⑤ 效果评测：独立语料 + 30 题题库 + 2 套留出集 + 回归门
+│   └── tests/            # 单元测试 + 接口测试 + 评测回归测试
 ├── frontend/             # ④ Vue3 + TS：对话 / 知识库 / 看板三页 + nginx.conf
 ├── .github/workflows/    # CI：lint + 测试 + 前端构建 + compose 校验
 ├── docker-compose.yml
@@ -180,6 +208,7 @@ context-engine-agent/
 |---|---|
 | `docs/architecture.md` | 架构设计与模块划分 |
 | `docs/frontend.md` | 前端实现说明，以及切换主流方案的步骤 |
+| `docs/evaluation.md` | **效果评测**：题库与语料设计、指标口径、消融数据（0.733 → 1.000）、留出集与已知边界 |
 | `docs/ai-assisted.md` | AI 辅助开发的记录与边界 |
 | `docs/code-review.md` | 代码审查记录 |
 
@@ -189,6 +218,7 @@ context-engine-agent/
 - **多 Agent**：Router → Retrieve / Tool / Writer 分层编排，middleware 提供生命周期钩子，每次请求留下完整 trace（可对照 LangGraph 的节点 / 边 / 状态 / 检查点理解）。
 - **工具调用**：`extract_args` 从自然语言里抽参数，抽不到就向用户追问；带失败重试与耗时统计，而不是把整句话直接塞给工具。
 - **badcase 闭环**：标记 → 落库 → 看板分布 → 补知识库 → 复测，形成可度量的迭代回路。
+- **效果评测**：语料与线上库解耦（同一 commit 分数可复现）、五类指标分开量而不是一个笼统"准确率"、留出集不参与调参；相关性阈值在开发集上标定并做成环境变量，换语料必须重新标定。
 - **接口工程化**：统一响应体 + 分段错误码 + `request_id` 日志 + OpenAPI + 三层测试，出问题能顺着 `request_id` 查到根因。
 - **模型微调**：Qwen2.5 + QLoRA（4bit）+ PEFT，保留前后对比数据，评测方法可复现。
 - **零依赖优先**：stdlib HTTP 服务器、自研 multipart 解析、进程内 LRU、离线 `fake` 模型后端，目标是在无网络、无第三方包的环境下也能完整演示。
@@ -198,4 +228,5 @@ context-engine-agent/
 1. **微调**是「小模型 + 小数据量」的验证性结果，重点在完整管线与评测方法，不代表生产级效果。
 2. **MySQL / Redis** 是配置驱动的可选外部服务，代码路径（方言、`AUTO_INCREMENT`、`ex=ttl`）已写好，但**尚未在真实 MySQL / Redis 上实测**，上线前需要实测。
 3. **前端**组件库 / 路由 / 图表是离线环境下的自研轻量实现，切换到主流方案的步骤写在 `docs/frontend.md`。
+4. **评测**的口径与阈值边界：相关性门控阈值在开发集上标定（`RELEVANCE_MIN_COVERAGE=0.35`），换语料需重新标定；留出集里的边界争议项（`现在北京时间几点？` 被判为工具+检索）如实记录在 `docs/evaluation.md`，没有为它继续调参。
 4. `npm run lint` 需要先自行安装 eslint（离线环境默认未装，见 `eslint.config.js` 头部说明）。
