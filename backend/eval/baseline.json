@@ -1,0 +1,1004 @@
+{
+  "version": 1,
+  "dataset": "dataset.json",
+  "generated_at": "2026-09-23 16:32:15",
+  "env": {
+    "chat_backend": "fake",
+    "retrieval_backend": "bm25",
+    "chunk_strategy": "sentence",
+    "top_k": 3,
+    "context_budget": 4096,
+    "corpus_docs": 10,
+    "corpus_chunks": 10,
+    "cases": 30
+  },
+  "metrics": {
+    "routing_accuracy": 1.0,
+    "tool_args_accuracy": 1.0,
+    "retrieval_hit@1": 1.0,
+    "retrieval_hit@3": 1.0,
+    "retrieval_mrr": 1.0,
+    "answer_grounding_accuracy": 1.0,
+    "guard_accuracy": 1.0,
+    "overall_pass_rate": 1.0,
+    "errors": 0
+  },
+  "results": [
+    {
+      "id": "R01",
+      "category": "routing",
+      "question": "北京今天天气怎么样？",
+      "expect": {
+        "plan": [
+          "tool:get_weather"
+        ]
+      },
+      "note": "天气意图 → 天气工具",
+      "passed": true,
+      "reason": "期望 ['tool:get_weather'] / 实际 ['tool:get_weather']",
+      "signals": {
+        "plan": [
+          "tool:get_weather"
+        ],
+        "tool_steps": [
+          {
+            "name": "get_weather",
+            "args": {
+              "city": "北京"
+            },
+            "result": "北京：晴，当前温度 20°C（离线评测桩）"
+          }
+        ],
+        "rank": null,
+        "sources": [],
+        "scores": [],
+        "context_sources": [],
+        "answer": "【离线演示】已调用工具并根据结果作答：get_weather => 北京：晴，当前温度 20°C（离线评测桩）（问题:北京今天天气怎么样？）"
+      },
+      "error": ""
+    },
+    {
+      "id": "R02",
+      "category": "routing",
+      "question": "帮我算一下 12*34+5 等于多少",
+      "expect": {
+        "plan": [
+          "tool:calculator"
+        ]
+      },
+      "note": "算式意图 → 计算器",
+      "passed": true,
+      "reason": "期望 ['tool:calculator'] / 实际 ['tool:calculator']",
+      "signals": {
+        "plan": [
+          "tool:calculator"
+        ],
+        "tool_steps": [
+          {
+            "name": "calculator",
+            "args": {
+              "expression": "12*34+5"
+            },
+            "result": "413"
+          }
+        ],
+        "rank": null,
+        "sources": [],
+        "scores": [],
+        "context_sources": [],
+        "answer": "【离线演示】已调用工具并根据结果作答：calculator => 413（问题:帮我算一下 12*34+5 等于多少）"
+      },
+      "error": ""
+    },
+    {
+      "id": "R03",
+      "category": "routing",
+      "question": "现在几点了？",
+      "expect": {
+        "plan": [
+          "tool:current_time"
+        ]
+      },
+      "note": "时间意图 → 时间工具",
+      "passed": true,
+      "reason": "期望 ['tool:current_time'] / 实际 ['tool:current_time']",
+      "signals": {
+        "plan": [
+          "tool:current_time"
+        ],
+        "tool_steps": [
+          {
+            "name": "current_time",
+            "args": {},
+            "result": "2026-09-23 08:32 UTC"
+          }
+        ],
+        "rank": null,
+        "sources": [],
+        "scores": [],
+        "context_sources": [],
+        "answer": "【离线演示】已调用工具并根据结果作答：current_time => 2026-09-23 08:32 UTC（问题:现在几点了？）"
+      },
+      "error": ""
+    },
+    {
+      "id": "R04",
+      "category": "routing",
+      "question": "身高170体重120斤穿什么尺码？",
+      "expect": {
+        "plan": [
+          "retrieve"
+        ]
+      },
+      "note": "知识库意图 → 检索",
+      "passed": true,
+      "reason": "期望 ['retrieve'] / 实际 ['retrieve']",
+      "signals": {
+        "plan": [
+          "retrieve"
+        ],
+        "tool_steps": [],
+        "rank": null,
+        "sources": [
+          "尺码推荐.txt"
+        ],
+        "scores": [
+          3.1695
+        ],
+        "context_sources": [
+          "尺码推荐.txt"
+        ],
+        "answer": "【离线演示】根据检索到的资料：[尺码推荐.txt] 尺码推荐：身高170厘米，体重90–115斤建议M码；体重115–135斤建议L码。牛仔裤尺码按腰围选，宽松款可大一号（问题：身高170体重120斤穿什么尺码？）"
+      },
+      "error": ""
+    },
+    {
+      "id": "R05",
+      "category": "routing",
+      "question": "你好，请介绍一下你能做什么",
+      "expect": {
+        "plan": [
+          "direct"
+        ]
+      },
+      "note": "寒暄/自我介绍不检索（BM25 字符级命中会把闲聊带偏，是重点观察项）",
+      "passed": true,
+      "reason": "期望 ['direct'] / 实际 ['direct']",
+      "signals": {
+        "plan": [
+          "direct"
+        ],
+        "tool_steps": [],
+        "rank": null,
+        "sources": [],
+        "scores": [],
+        "context_sources": [],
+        "answer": "【离线演示】针对「你好，请介绍一下你能做什么」：当前为空检索（离线模式）。请配置 DASHSCOPE_API_KEY 或加载本地微调模型以获得真实回答。"
+      },
+      "error": ""
+    },
+    {
+      "id": "R06",
+      "category": "routing",
+      "question": "成都今天冷吗？",
+      "expect": {
+        "plan": [
+          "tool:get_weather"
+        ]
+      },
+      "note": "冷暖句式也属天气意图",
+      "passed": true,
+      "reason": "期望 ['tool:get_weather'] / 实际 ['tool:get_weather']",
+      "signals": {
+        "plan": [
+          "tool:get_weather"
+        ],
+        "tool_steps": [
+          {
+            "name": "get_weather",
+            "args": {
+              "city": "成都"
+            },
+            "result": "成都：晴，当前温度 20°C（离线评测桩）"
+          }
+        ],
+        "rank": null,
+        "sources": [],
+        "scores": [],
+        "context_sources": [],
+        "answer": "【离线演示】已调用工具并根据结果作答：get_weather => 成都：晴，当前温度 20°C（离线评测桩）（问题:成都今天冷吗？）"
+      },
+      "error": ""
+    },
+    {
+      "id": "R07",
+      "category": "routing",
+      "question": "上海天气怎么样？另外帮我算一下 8*7",
+      "expect": {
+        "plan": [
+          "tool:get_weather",
+          "tool:calculator"
+        ]
+      },
+      "note": "多意图：天气 + 计算都要走到（单意图路由会漏掉一个）",
+      "passed": true,
+      "reason": "期望 ['tool:calculator', 'tool:get_weather'] / 实际 ['tool:calculator', 'tool:get_weather']",
+      "signals": {
+        "plan": [
+          "tool:calculator",
+          "tool:get_weather"
+        ],
+        "tool_steps": [
+          {
+            "name": "calculator",
+            "args": {
+              "expression": "8*7"
+            },
+            "result": "56"
+          },
+          {
+            "name": "get_weather",
+            "args": {
+              "city": "上海"
+            },
+            "result": "上海：晴，当前温度 20°C（离线评测桩）"
+          }
+        ],
+        "rank": null,
+        "sources": [],
+        "scores": [],
+        "context_sources": [],
+        "answer": "【离线演示】已调用工具并根据结果作答：calculator => 56；get_weather => 上海：晴，当前温度 20°C（离线评测桩）（问题:上海天气怎么样？另外帮我算一下 8*7）"
+      },
+      "error": ""
+    },
+    {
+      "id": "R08",
+      "category": "routing",
+      "question": "加绒牛仔怎么洗？",
+      "expect": {
+        "plan": [
+          "retrieve"
+        ]
+      },
+      "note": "洗护类问题 → 检索",
+      "passed": true,
+      "reason": "期望 ['retrieve'] / 实际 ['retrieve']",
+      "signals": {
+        "plan": [
+          "retrieve"
+        ],
+        "tool_steps": [],
+        "rank": null,
+        "sources": [
+          "洗涤养护.txt"
+        ],
+        "scores": [
+          1.4197
+        ],
+        "context_sources": [
+          "洗涤养护.txt"
+        ],
+        "answer": "【离线演示】根据检索到的资料：[洗涤养护.txt] 加绒牛仔：水温≤30℃，中性洗涤剂，翻面清洗，机洗选轻柔模式，避免长时间浸泡。收纳时折叠平放，避免重压破坏绒层。纯棉保（问题：加绒牛仔怎么洗？）"
+      },
+      "error": ""
+    },
+    {
+      "id": "T01",
+      "category": "tool_args",
+      "question": "北京今天天气怎么样？",
+      "expect": {
+        "tool": "get_weather",
+        "city": "北京"
+      },
+      "note": "标准句式抽城市",
+      "passed": true,
+      "reason": "期望 city=北京 / 实际 city='北京'",
+      "signals": {
+        "plan": [
+          "tool:get_weather"
+        ],
+        "tool_steps": [
+          {
+            "name": "get_weather",
+            "args": {
+              "city": "北京"
+            },
+            "result": "北京：晴，当前温度 20°C（离线评测桩）"
+          }
+        ],
+        "rank": null,
+        "sources": [],
+        "scores": [],
+        "context_sources": [],
+        "answer": "【离线演示】已调用工具并根据结果作答：get_weather => 北京：晴，当前温度 20°C（离线评测桩）（问题:北京今天天气怎么样？）"
+      },
+      "error": ""
+    },
+    {
+      "id": "T02",
+      "category": "tool_args",
+      "question": "帮我查一下成都的天气",
+      "expect": {
+        "tool": "get_weather",
+        "city": "成都"
+      },
+      "note": "口语化前缀（帮我查一下）不能混进城市名",
+      "passed": true,
+      "reason": "期望 city=成都 / 实际 city='成都'",
+      "signals": {
+        "plan": [
+          "tool:get_weather"
+        ],
+        "tool_steps": [
+          {
+            "name": "get_weather",
+            "args": {
+              "city": "成都"
+            },
+            "result": "成都：晴，当前温度 20°C（离线评测桩）"
+          }
+        ],
+        "rank": null,
+        "sources": [],
+        "scores": [],
+        "context_sources": [],
+        "answer": "【离线演示】已调用工具并根据结果作答：get_weather => 成都：晴，当前温度 20°C（离线评测桩）（问题:帮我查一下成都的天气）"
+      },
+      "error": ""
+    },
+    {
+      "id": "T03",
+      "category": "tool_args",
+      "question": "上海现在气温多少度？",
+      "expect": {
+        "tool": "get_weather",
+        "city": "上海"
+      },
+      "note": "气温句式",
+      "passed": true,
+      "reason": "期望 city=上海 / 实际 city='上海'",
+      "signals": {
+        "plan": [
+          "tool:get_weather",
+          "tool:current_time"
+        ],
+        "tool_steps": [
+          {
+            "name": "get_weather",
+            "args": {
+              "city": "上海"
+            },
+            "result": "上海：晴，当前温度 20°C（离线评测桩）"
+          },
+          {
+            "name": "current_time",
+            "args": {},
+            "result": "2026-09-23 08:32 UTC"
+          }
+        ],
+        "rank": null,
+        "sources": [],
+        "scores": [],
+        "context_sources": [],
+        "answer": "【离线演示】已调用工具并根据结果作答：get_weather => 上海：晴，当前温度 20°C（离线评测桩）；current_time => 2026-09-23 08:32 UTC（问题:上海现在气温多少度？）"
+      },
+      "error": ""
+    },
+    {
+      "id": "T04",
+      "category": "tool_args",
+      "question": "成都今天冷吗？",
+      "expect": {
+        "tool": "get_weather",
+        "city": "成都"
+      },
+      "note": "「冷不冷/冷吗」句式抽城市，别把「冷」带进城市名",
+      "passed": true,
+      "reason": "期望 city=成都 / 实际 city='成都'",
+      "signals": {
+        "plan": [
+          "tool:get_weather"
+        ],
+        "tool_steps": [
+          {
+            "name": "get_weather",
+            "args": {
+              "city": "成都"
+            },
+            "result": "成都：晴，当前温度 20°C（离线评测桩）"
+          }
+        ],
+        "rank": null,
+        "sources": [],
+        "scores": [],
+        "context_sources": [],
+        "answer": "【离线演示】已调用工具并根据结果作答：get_weather => 成都：晴，当前温度 20°C（离线评测桩）（问题:成都今天冷吗？）"
+      },
+      "error": ""
+    },
+    {
+      "id": "T05",
+      "category": "tool_args",
+      "question": "计算 12*34+5",
+      "expect": {
+        "tool": "calculator",
+        "value": "413"
+      },
+      "note": "算式抽取（比较计算结果，不比对表达式写法）",
+      "passed": true,
+      "reason": "期望 413 / 实际 413（算式抽取为 '12*34+5'）",
+      "signals": {
+        "plan": [
+          "tool:calculator",
+          "retrieve"
+        ],
+        "tool_steps": [
+          {
+            "name": "calculator",
+            "args": {
+              "expression": "12*34+5"
+            },
+            "result": "413"
+          }
+        ],
+        "rank": null,
+        "sources": [
+          "会员积分.txt"
+        ],
+        "scores": [
+          1.2141
+        ],
+        "context_sources": [
+          "会员积分.txt"
+        ],
+        "answer": "【离线演示】已调用工具并根据结果作答：calculator => 413（问题:计算 12*34+5）"
+      },
+      "error": ""
+    },
+    {
+      "id": "T06",
+      "category": "tool_args",
+      "question": "12乘34加5等于多少？",
+      "expect": {
+        "tool": "calculator",
+        "value": "413"
+      },
+      "note": "中文运算符归一化",
+      "passed": true,
+      "reason": "期望 413 / 实际 413（算式抽取为 '12*34+5'）",
+      "signals": {
+        "plan": [
+          "tool:calculator",
+          "retrieve"
+        ],
+        "tool_steps": [
+          {
+            "name": "calculator",
+            "args": {
+              "expression": "12*34+5"
+            },
+            "result": "413"
+          }
+        ],
+        "rank": null,
+        "sources": [
+          "会员积分.txt"
+        ],
+        "scores": [
+          1.0585
+        ],
+        "context_sources": [
+          "会员积分.txt"
+        ],
+        "answer": "【离线演示】已调用工具并根据结果作答：calculator => 413（问题:12乘34加5等于多少？）"
+      },
+      "error": ""
+    },
+    {
+      "id": "T07",
+      "category": "tool_args",
+      "question": "（18+6）乘以3 等于几",
+      "expect": {
+        "tool": "calculator",
+        "value": "72"
+      },
+      "note": "全角括号：括号不参与抽取会算成 18+6=24（错误答案），正确是 (18+6)*3=72",
+      "passed": true,
+      "reason": "期望 72 / 实际 72（算式抽取为 '(18+6)*3'）",
+      "signals": {
+        "plan": [
+          "tool:calculator"
+        ],
+        "tool_steps": [
+          {
+            "name": "calculator",
+            "args": {
+              "expression": "(18+6)*3"
+            },
+            "result": "72"
+          }
+        ],
+        "rank": null,
+        "sources": [],
+        "scores": [],
+        "context_sources": [],
+        "answer": "【离线演示】已调用工具并根据结果作答：calculator => 72（问题:（18+6）乘以3 等于几）"
+      },
+      "error": ""
+    },
+    {
+      "id": "K01",
+      "category": "retrieval",
+      "question": "身高170，体重120斤，推荐什么尺码？",
+      "expect": {
+        "source": "尺码推荐.txt"
+      },
+      "note": "与「常见问题.txt」争抢「尺码」关键词",
+      "passed": true,
+      "reason": "期望来源 尺码推荐.txt / 排名 1（top3=['尺码推荐.txt']）",
+      "signals": {
+        "plan": [
+          "retrieve"
+        ],
+        "tool_steps": [],
+        "rank": 1,
+        "sources": [
+          "尺码推荐.txt"
+        ],
+        "scores": [
+          4.1374
+        ],
+        "context_sources": [
+          "尺码推荐.txt"
+        ],
+        "answer": "【离线演示】根据检索到的资料：[尺码推荐.txt] 尺码推荐：身高170厘米，体重90–115斤建议M码；体重115–135斤建议L码。牛仔裤尺码按腰围选，宽松款可大一号（问题：身高170，体重120斤，推荐什么尺码？）"
+      },
+      "error": ""
+    },
+    {
+      "id": "K02",
+      "category": "retrieval",
+      "question": "加绒牛仔裤怎么洗才不会掉绒？",
+      "expect": {
+        "source": "洗涤养护.txt"
+      },
+      "note": "洗护召回",
+      "passed": true,
+      "reason": "期望来源 洗涤养护.txt / 排名 1（top3=['洗涤养护.txt', '颜色选择.txt']）",
+      "signals": {
+        "plan": [
+          "retrieve"
+        ],
+        "tool_steps": [],
+        "rank": 1,
+        "sources": [
+          "洗涤养护.txt",
+          "颜色选择.txt"
+        ],
+        "scores": [
+          1.4197,
+          0.9765
+        ],
+        "context_sources": [
+          "洗涤养护.txt",
+          "颜色选择.txt"
+        ],
+        "answer": "【离线演示】根据检索到的资料：[洗涤养护.txt] 加绒牛仔：水温≤30℃，中性洗涤剂，翻面清洗，机洗选轻柔模式，避免长时间浸泡。收纳时折叠平放，避免重压破坏绒层。纯棉保（问题：加绒牛仔裤怎么洗才不会掉绒？）"
+      },
+      "error": ""
+    },
+    {
+      "id": "K03",
+      "category": "retrieval",
+      "question": "春季适合穿什么颜色？",
+      "expect": {
+        "source": "颜色选择.txt"
+      },
+      "note": "颜色召回",
+      "passed": true,
+      "reason": "期望来源 颜色选择.txt / 排名 1（top3=['颜色选择.txt']）",
+      "signals": {
+        "plan": [
+          "retrieve"
+        ],
+        "tool_steps": [],
+        "rank": 1,
+        "sources": [
+          "颜色选择.txt"
+        ],
+        "scores": [
+          2.6145
+        ],
+        "context_sources": [
+          "颜色选择.txt"
+        ],
+        "answer": "【离线演示】根据检索到的资料：[颜色选择.txt] 春季适合清新柔和的颜色：樱花粉、薄荷绿、浅蓝色。服装搭配遵循三色原则，全身颜色不超过三种，同色系相近色更容易显高级。深（问题：春季适合穿什么颜色？）"
+      },
+      "error": ""
+    },
+    {
+      "id": "K04",
+      "category": "retrieval",
+      "question": "德绒材质的衣服可以高温熨烫吗？",
+      "expect": {
+        "source": "洗涤养护.txt"
+      },
+      "note": "与「材质说明.txt」争抢「材质」",
+      "passed": true,
+      "reason": "期望来源 洗涤养护.txt / 排名 1（top3=['洗涤养护.txt']）",
+      "signals": {
+        "plan": [
+          "retrieve"
+        ],
+        "tool_steps": [],
+        "rank": 1,
+        "sources": [
+          "洗涤养护.txt"
+        ],
+        "scores": [
+          2.9692
+        ],
+        "context_sources": [
+          "洗涤养护.txt"
+        ],
+        "answer": "【离线演示】根据检索到的资料：[洗涤养护.txt] 加绒牛仔：水温≤30℃，中性洗涤剂，翻面清洗，机洗选轻柔模式，避免长时间浸泡。收纳时折叠平放，避免重压破坏绒层。纯棉保（问题：德绒材质的衣服可以高温熨烫吗？）"
+      },
+      "error": ""
+    },
+    {
+      "id": "K05",
+      "category": "retrieval",
+      "question": "买回来不合适能退吗？",
+      "expect": {
+        "source": "售后政策.txt"
+      },
+      "note": "口语化提问召回售后政策（与「常见问题.txt」争抢「退换」）",
+      "passed": true,
+      "reason": "期望来源 售后政策.txt / 排名 1（top3=['售后政策.txt', '颜色选择.txt']）",
+      "signals": {
+        "plan": [
+          "retrieve"
+        ],
+        "tool_steps": [],
+        "rank": 1,
+        "sources": [
+          "售后政策.txt",
+          "颜色选择.txt"
+        ],
+        "scores": [
+          1.3721,
+          1.0231
+        ],
+        "context_sources": [
+          "售后政策.txt",
+          "颜色选择.txt"
+        ],
+        "answer": "【离线演示】根据检索到的资料：[售后政策.txt] 售后政策：签收后7天内、吊牌完好且未洗涤的商品支持无理由退换；质量问题30天内包退换。非质量问题的退换运费由买家承担，（问题：买回来不合适能退吗？）"
+      },
+      "error": ""
+    },
+    {
+      "id": "K06",
+      "category": "retrieval",
+      "question": "餐桌放在仓库哪个位置？",
+      "expect": {
+        "source": "库存库位.txt"
+      },
+      "note": "「餐桌」在材质说明里也出现，考位置意图的区分",
+      "passed": true,
+      "reason": "期望来源 库存库位.txt / 排名 1（top3=['库存库位.txt']）",
+      "signals": {
+        "plan": [
+          "retrieve"
+        ],
+        "tool_steps": [],
+        "rank": 1,
+        "sources": [
+          "库存库位.txt"
+        ],
+        "scores": [
+          2.451
+        ],
+        "context_sources": [
+          "库存库位.txt"
+        ],
+        "answer": "【离线演示】根据检索到的资料：[库存库位.txt] 仓储库位：餐桌类商品存放于A区3层货架，衣柜类存放于B区2层，沙发等大件存放于C区大件区。拣货后需在出库单标注库位编号（问题：餐桌放在仓库哪个位置？）"
+      },
+      "error": ""
+    },
+    {
+      "id": "K07",
+      "category": "retrieval",
+      "question": "衣柜是什么板材，环保吗？",
+      "expect": {
+        "source": "材质说明.txt"
+      },
+      "note": "板材/环保召回",
+      "passed": true,
+      "reason": "期望来源 材质说明.txt / 排名 1（top3=['材质说明.txt', '洗涤养护.txt']）",
+      "signals": {
+        "plan": [
+          "retrieve"
+        ],
+        "tool_steps": [],
+        "rank": 1,
+        "sources": [
+          "材质说明.txt",
+          "洗涤养护.txt"
+        ],
+        "scores": [
+          1.7862,
+          0.5685
+        ],
+        "context_sources": [
+          "材质说明.txt",
+          "洗涤养护.txt"
+        ],
+        "answer": "【离线演示】根据检索到的资料：[材质说明.txt] 材质说明：实木餐桌采用橡木或胡桃木，表面使用环保水性漆；衣柜板材为E0级环保板材，封边完整不易受潮；沙发面料分为科技布（问题：衣柜是什么板材，环保吗？）"
+      },
+      "error": ""
+    },
+    {
+      "id": "A01",
+      "category": "answer_grounding",
+      "question": "身高170体重120斤穿什么尺码？",
+      "expect": {
+        "must_contain": [
+          "M码",
+          "L码"
+        ]
+      },
+      "note": "答案要覆盖尺码表（离线 fake 模型回放检索片段，故此项衡量事实是否进入答案）",
+      "passed": true,
+      "reason": "命中 ['M码', 'L码']",
+      "signals": {
+        "plan": [
+          "retrieve"
+        ],
+        "tool_steps": [],
+        "rank": null,
+        "sources": [
+          "尺码推荐.txt"
+        ],
+        "scores": [
+          3.1695
+        ],
+        "context_sources": [
+          "尺码推荐.txt"
+        ],
+        "answer": "【离线演示】根据检索到的资料：[尺码推荐.txt] 尺码推荐：身高170厘米，体重90–115斤建议M码；体重115–135斤建议L码。牛仔裤尺码按腰围选，宽松款可大一号（问题：身高170体重120斤穿什么尺码？）"
+      },
+      "error": ""
+    },
+    {
+      "id": "A02",
+      "category": "answer_grounding",
+      "question": "计算 12*34+5",
+      "expect": {
+        "must_contain": [
+          "413"
+        ]
+      },
+      "note": "工具结果要进入最终答案（端到端）",
+      "passed": true,
+      "reason": "命中 ['413']",
+      "signals": {
+        "plan": [
+          "tool:calculator",
+          "retrieve"
+        ],
+        "tool_steps": [
+          {
+            "name": "calculator",
+            "args": {
+              "expression": "12*34+5"
+            },
+            "result": "413"
+          }
+        ],
+        "rank": null,
+        "sources": [
+          "会员积分.txt"
+        ],
+        "scores": [
+          1.2141
+        ],
+        "context_sources": [
+          "会员积分.txt"
+        ],
+        "answer": "【离线演示】已调用工具并根据结果作答：calculator => 413（问题:计算 12*34+5）"
+      },
+      "error": ""
+    },
+    {
+      "id": "A03",
+      "category": "answer_grounding",
+      "question": "加绒牛仔怎么洗涤？",
+      "expect": {
+        "must_contain": [
+          "30℃"
+        ]
+      },
+      "note": "洗护事实进入答案",
+      "passed": true,
+      "reason": "命中 ['30℃']",
+      "signals": {
+        "plan": [
+          "retrieve"
+        ],
+        "tool_steps": [],
+        "rank": null,
+        "sources": [
+          "洗涤养护.txt"
+        ],
+        "scores": [
+          1.7101
+        ],
+        "context_sources": [
+          "洗涤养护.txt"
+        ],
+        "answer": "【离线演示】根据检索到的资料：[洗涤养护.txt] 加绒牛仔：水温≤30℃，中性洗涤剂，翻面清洗，机洗选轻柔模式，避免长时间浸泡。收纳时折叠平放，避免重压破坏绒层。纯棉保（问题：加绒牛仔怎么洗涤？）"
+      },
+      "error": ""
+    },
+    {
+      "id": "A04",
+      "category": "answer_grounding",
+      "question": "买回来不合适能退吗？",
+      "expect": {
+        "must_contain": [
+          "7天"
+        ]
+      },
+      "note": "售后事实进入答案",
+      "passed": true,
+      "reason": "命中 ['7天']",
+      "signals": {
+        "plan": [
+          "retrieve"
+        ],
+        "tool_steps": [],
+        "rank": null,
+        "sources": [
+          "售后政策.txt",
+          "颜色选择.txt"
+        ],
+        "scores": [
+          1.3721,
+          1.0231
+        ],
+        "context_sources": [
+          "售后政策.txt",
+          "颜色选择.txt"
+        ],
+        "answer": "【离线演示】根据检索到的资料：[售后政策.txt] 售后政策：签收后7天内、吊牌完好且未洗涤的商品支持无理由退换；质量问题30天内包退换。非质量问题的退换运费由买家承担，（问题：买回来不合适能退吗？）"
+      },
+      "error": ""
+    },
+    {
+      "id": "A05",
+      "category": "answer_grounding",
+      "question": "衣柜是什么板材，环保吗？",
+      "expect": {
+        "must_contain": [
+          "E0"
+        ]
+      },
+      "note": "材质事实进入答案",
+      "passed": true,
+      "reason": "命中 ['E0']",
+      "signals": {
+        "plan": [
+          "retrieve"
+        ],
+        "tool_steps": [],
+        "rank": null,
+        "sources": [
+          "材质说明.txt",
+          "洗涤养护.txt"
+        ],
+        "scores": [
+          1.7862,
+          0.5685
+        ],
+        "context_sources": [
+          "材质说明.txt",
+          "洗涤养护.txt"
+        ],
+        "answer": "【离线演示】根据检索到的资料：[材质说明.txt] 材质说明：实木餐桌采用橡木或胡桃木，表面使用环保水性漆；衣柜板材为E0级环保板材，封边完整不易受潮；沙发面料分为科技布（问题：衣柜是什么板材，环保吗？）"
+      },
+      "error": ""
+    },
+    {
+      "id": "G01",
+      "category": "guard",
+      "question": "你们支持花呗分期付款吗？",
+      "expect": {
+        "abstain": true,
+        "forbid": [
+          "支持花呗",
+          "可以分期",
+          "12期",
+          "3期",
+          "免息"
+        ]
+      },
+      "note": "知识库不覆盖支付方式：不能把「会员积分」片段当答案，也不能编分期承诺",
+      "passed": true,
+      "reason": "兜底行为符合预期",
+      "signals": {
+        "plan": [
+          "direct"
+        ],
+        "tool_steps": [],
+        "rank": null,
+        "sources": [],
+        "scores": [],
+        "context_sources": [],
+        "answer": "【离线演示】针对「你们支持花呗分期付款吗？」：当前为空检索（离线模式）。请配置 DASHSCOPE_API_KEY 或加载本地微调模型以获得真实回答。"
+      },
+      "error": ""
+    },
+    {
+      "id": "G02",
+      "category": "guard",
+      "question": "帮我查一下天气",
+      "expect": {
+        "ask_for_args": true,
+        "tool": "get_weather"
+      },
+      "note": "缺城市参数：应追问补参，而不是把整句话当城市去调工具",
+      "passed": true,
+      "reason": "兜底行为符合预期",
+      "signals": {
+        "plan": [
+          "tool:get_weather"
+        ],
+        "tool_steps": [
+          {
+            "name": "get_weather",
+            "args": {},
+            "result": "没能从提问里识别出城市名，请补充城市（例如：北京今天天气怎么样）"
+          }
+        ],
+        "rank": null,
+        "sources": [],
+        "scores": [],
+        "context_sources": [],
+        "answer": "【离线演示】已调用工具并根据结果作答：get_weather => 没能从提问里识别出城市名，请补充城市（例如：北京今天天气怎么样）（问题:帮我查一下天气）"
+      },
+      "error": ""
+    },
+    {
+      "id": "G03",
+      "category": "guard",
+      "question": "你们公司去年营收多少？",
+      "expect": {
+        "abstain": true,
+        "forbid": [
+          "营业收入",
+          "营收",
+          "净利润",
+          "亿",
+          "万元"
+        ]
+      },
+      "note": "超出知识库范围的问题不能编数字",
+      "passed": true,
+      "reason": "兜底行为符合预期",
+      "signals": {
+        "plan": [
+          "direct"
+        ],
+        "tool_steps": [],
+        "rank": null,
+        "sources": [],
+        "scores": [],
+        "context_sources": [],
+        "answer": "【离线演示】针对「你们公司去年营收多少？」：当前为空检索（离线模式）。请配置 DASHSCOPE_API_KEY 或加载本地微调模型以获得真实回答。"
+      },
+      "error": ""
+    }
+  ]
+}

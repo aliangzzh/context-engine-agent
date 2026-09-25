@@ -23,6 +23,10 @@ backend/data/*.db-shm
 backend/data/*.db-wal
 backend/finetune/outputs/
 
+# 评测：语料 / 题库 / baseline.json 进版本库；跑分产物不进
+backend/eval/_run/
+backend/eval/reports/
+
 # Node
 node_modules/
 frontend/dist/

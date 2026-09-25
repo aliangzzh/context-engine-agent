@@ -18,7 +18,7 @@
 | 层 | 手段 | 本项目的例子 |
 |---|---|---|
 | ① 类型/语法 | `vue-tsc --noEmit`、`python -m compileall`/`ruff check` | 前端 137 个文件类型检查通过 |
-| ② 单元测试 | `python -m unittest discover -s tests` | 85 个测试，覆盖上下文裁剪、存储事务、缓存、参数抽取、错误码 |
+| ② 单元测试 | `python -m unittest discover -s tests` | 103 个测试，覆盖上下文裁剪、存储事务、缓存、参数抽取、错误码、Agent 效果评测回归门 |
 | ③ 接口/端到端 | 真起服务再发请求（`tests/test_api.py` 用 urllib；本地用 curl） | `/api/kb/upload` 走 multipart → 200 入库；`/api/kb/list?page=0` → 400/40001 |
 | ④ 人工读代码 | 逐行问"这行为什么存在、删掉会怎样" | 见下面第 3 节 |
 

@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "description": "第二套留出集（hold-out #2）：第一套留出集暴露的 2 个缺口已修（那套因此被污染），这套写在全部修复之后，用来取最终的无偏泛化数字。同样不进 CI 回归门。",
+  "categories": {
+    "routing": "意图路由",
+    "tool_args": "工具参数抽取",
+    "retrieval": "RAG 召回",
+    "answer_grounding": "答案事实覆盖",
+    "guard": "兜底与拒答"
+  },
+  "cases": [
+    {
+      "id": "H2R01",
+      "category": "routing",
+      "question": "现在北京时间几点？",
+      "expect": {"plan": ["tool:current_time"]},
+      "note": "「北京时间」是时间问法，不该被「北京」带成天气或检索"
+    },
+    {
+      "id": "H2R02",
+      "category": "routing",
+      "question": "帮我查下广州的天气",
+      "expect": {"plan": ["tool:get_weather"]},
+      "note": "查下（不带一）的口语说法"
+    },
+    {
+      "id": "H2T01",
+      "category": "tool_args",
+      "question": "杭州今天气温是多少？",
+      "expect": {"tool": "get_weather", "city": "杭州"},
+      "note": "气温是多少 句式"
+    },
+    {
+      "id": "H2T02",
+      "category": "tool_args",
+      "question": "9加上10等于多少？",
+      "expect": {"tool": "calculator", "value": "19"},
+      "note": "数字开头的中文加法"
+    },
+    {
+      "id": "H2K01",
+      "category": "retrieval",
+      "question": "加绒款收纳要注意什么？",
+      "expect": {"source": "洗涤养护.txt"},
+      "note": "收纳（而不是洗涤）角度的问法"
+    },
+    {
+      "id": "H2K02",
+      "category": "retrieval",
+      "question": "换货运费谁出？",
+      "expect": {"source": "售后政策.txt"},
+      "note": "「换货」要打到售后政策，而不是物流发货"
+    },
+    {
+      "id": "H2A01",
+      "category": "answer_grounding",
+      "question": "加绒款收纳要注意什么？",
+      "expect": {"must_contain": ["折叠平放"]},
+      "note": "收纳事实进入答案"
+    },
+    {
+      "id": "H2A02",
+      "category": "answer_grounding",
+      "question": "换货运费谁出？",
+      "expect": {"must_contain": ["买家承担"]},
+      "note": "运费责任方进入答案"
+    },
+    {
+      "id": "H2G01",
+      "category": "guard",
+      "question": "这个能开发票吗？",
+      "expect": {"abstain": true, "forbid": ["可以开", "能开发票", "支持开"]},
+      "note": "知识库没有发票政策：不能硬答"
+    },
+    {
+      "id": "H2G02",
+      "category": "guard",
+      "question": "帮我查一下温度",
+      "expect": {"ask_for_args": true, "tool": "get_weather"},
+      "note": "没有城市名（「查一下」不是地名）：必须追问"
+    }
+  ]
+}

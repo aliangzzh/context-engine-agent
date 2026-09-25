@@ -1,0 +1,16 @@
+# 接入真模型 / 向量检索所需的「可选」依赖。
+#
+#   pip install -r requirements-llm.txt
+#
+# 装完之后还需要在 .env 里填 DASHSCOPE_API_KEY（两步缺一不可）：
+# 只填 key 不装依赖时，后端会静默退回离线 fake 模型，且 /health 仍显示 chat_backend=qwen_api。
+# 验证：curl http://localhost:8000/health  →  看 model 字段是否为 qwen_api。
+
+# --- 通义千问（DashScope）聊天模型 ---
+langchain-community>=0.2
+langchain-core>=0.2
+dashscope>=1.20
+
+# --- 向量检索（可选）：取消注释后，检索会从离线 BM25 升级为嵌入相似度 ---
+# 未安装或索引不存在时会自动回退到 BM25，不会报错。
+# faiss-cpu>=1.8
