@@ -30,6 +30,9 @@ from app.context.token_budget import TokenBudget, token_len
 from app.models.fake import FakeModel
 from app.retrieval.knowledge import KnowledgeBase
 from app.retrieval.retriever import Retriever
+from app.retrieval import vector_index
+from app.retrieval.retriever import _rrf_fuse
+from app.retrieval.vector_index import VectorIndex, VectorStatus, corpus_fingerprint
 from app.schemas import RetrievedChunk
 from app.storage.repo import KbRepository
 
@@ -341,6 +344,143 @@ class RetrieverTest(unittest.TestCase):
         self.assertEqual(kb.ingest_text("一些知识内容", "test.txt")["status"], "ingested")
         self.assertEqual(kb.ingest_text("一些知识内容", "test.txt")["status"], "skipped")
         self.assertEqual(len(r.texts), 1)
+
+
+class VectorIndexTest(unittest.TestCase):
+    """向量索引：三态判定 / 指纹 / 写入失败 / 降级 / RRF 融合。
+
+    **全部离线** —— 不调 embedding API（CI 没有 key，测试必须确定性）。
+    靠 monkeypatch 覆盖分支：
+    * ``missing_deps`` 模拟依赖缺失
+    * ``_deps`` 返回"会抛异常的假 FAISS"，模拟"依赖在但写索引失败"
+    * 直接写 ``index_meta.json`` 伪造 READY / STALE 状态，不需要真索引
+    """
+
+    def _mk(self) -> VectorIndex:
+        d = _scratch_dir()
+        self.addCleanup(_rm, d)
+        return VectorIndex(
+            index_dir=d / "faiss", index_name="index",
+            embedding_model="text-embedding-v4",
+        )
+
+    def _fake_deps(self) -> None:
+        """让 status() 认为依赖齐全（只用于状态判定，不会真的动 FAISS）。"""
+        original = vector_index._deps
+        vector_index._deps = lambda: (object, object)
+        self.addCleanup(setattr, vector_index, "_deps", original)
+
+    def _no_deps(self) -> None:
+        original = vector_index.missing_deps
+        vector_index.missing_deps = lambda: ["faiss"]
+        self.addCleanup(setattr, vector_index, "missing_deps", original)
+
+    # -- 指纹 ----------------------------------------------------------------------
+    def test_fingerprint_ignores_order(self):
+        self.assertEqual(corpus_fingerprint(["a", "b"]), corpus_fingerprint(["b", "a"]))
+
+    def test_fingerprint_changes_with_content(self):
+        self.assertNotEqual(corpus_fingerprint(["a", "b"]), corpus_fingerprint(["a", "c"]))
+
+    # -- 三态 ----------------------------------------------------------------------
+    def test_unavailable_without_deps(self):
+        self._no_deps()
+        vi = self._mk()
+        self.assertEqual(vi.status(["x"]), VectorStatus.UNAVAILABLE)
+        self.assertIsNone(vi.search("x", 3))  # None = 不可用，调用方据此降级
+
+    def test_unavailable_without_meta(self):
+        self._fake_deps()
+        self.assertEqual(self._mk().status(["x"]), VectorStatus.UNAVAILABLE)
+
+    def test_ready_when_fingerprint_matches(self):
+        self._fake_deps()
+        vi = self._mk()
+        texts = ["a", "b"]
+        vi.dir.mkdir(parents=True, exist_ok=True)
+        vi._write_meta(texts)
+        self.assertEqual(vi.status(texts), VectorStatus.READY)
+
+    def test_stale_when_corpus_changes(self):
+        """语料增删后必须判 STALE —— 宁可降级，也不返回过期结果。"""
+        self._fake_deps()
+        vi = self._mk()
+        texts = ["a", "b"]
+        vi.dir.mkdir(parents=True, exist_ok=True)
+        vi._write_meta(texts)
+        self.assertEqual(vi.status(texts + ["c"]), VectorStatus.STALE)
+        self.assertEqual(vi.status(["a"]), VectorStatus.STALE)
+
+    def test_stale_when_embedding_model_changes(self):
+        """换 embedding 模型必须重建索引（向量空间都变了）。"""
+        self._fake_deps()
+        vi = self._mk()
+        texts = ["a"]
+        vi.dir.mkdir(parents=True, exist_ok=True)
+        vi._write_meta(texts)
+        other = VectorIndex(index_dir=vi.dir, index_name="index",
+                            embedding_model="another-model")
+        self.assertEqual(other.status(texts), VectorStatus.STALE)
+
+    def test_failed_write_keeps_index_stale(self):
+        """写索引失败 -> meta 不更新 -> 指纹失配 -> STALE（而不是静默用旧索引）。"""
+        self._fake_deps()
+        vi = self._mk()
+        old = ["a"]
+        vi.dir.mkdir(parents=True, exist_ok=True)
+        vi._write_meta(old)
+
+        class _BoomFAISS:
+            @staticmethod
+            def from_texts(*args, **kwargs):
+                raise RuntimeError("disk full")
+
+        original = vector_index._deps
+        vector_index._deps = lambda: (_BoomFAISS, lambda **kwargs: object())
+        self.addCleanup(setattr, vector_index, "_deps", original)
+
+        self.assertFalse(vi.rebuild(old + ["b"], [{"source": "x"}, {"source": "y"}]))
+        self.assertEqual(vi.status(old + ["b"]), VectorStatus.STALE)
+
+    # -- 融合 ----------------------------------------------------------------------
+    def test_rrf_fuse_boosts_shared_hits(self):
+        """两路都召回的片段，RRF 分数叠加，应该排到最前。"""
+        a = RetrievedChunk(text="lexical first", source="a", score=9.0)
+        shared = RetrievedChunk(text="shared chunk", source="b", score=1.0)
+        c = RetrievedChunk(text="vector first", source="c", score=0.9)
+        fused = _rrf_fuse([a, shared], [c, shared], 3)
+        self.assertEqual(fused[0].text, "shared chunk")
+        self.assertEqual(len(fused), 3)
+
+    def test_rrf_fuse_dedupes(self):
+        same = RetrievedChunk(text="same", source="s", score=1.0)
+        fused = _rrf_fuse([same], [same], 5)
+        self.assertEqual(len(fused), 1)
+
+    # -- 降级 ----------------------------------------------------------------------
+    def test_degrade_to_bm25_when_vector_unavailable(self):
+        """索引不可用时，hybrid 仍必须返回 BM25 结果，且 effective 上报 bm25。"""
+        d = _scratch_dir()
+        self.addCleanup(_rm, d)
+        r = Retriever(backend="hybrid", kb_path=d / "kb.json")
+        r.add_chunks(["加绒牛仔水温不超过30度"], [{"source": "a"}])
+        r.vector = VectorIndex(index_dir=d / "faiss")  # 没有 meta -> UNAVAILABLE
+        self._no_deps()
+        hits = r.search("加绒牛仔怎么洗")
+        self.assertTrue(hits)
+        self.assertIn("加绒牛仔", hits[0].text)
+        self.assertEqual(r.effective_backend(), "bm25")
+        self.assertEqual(r.last_degrade, VectorStatus.UNAVAILABLE)
+
+    def test_bm25_backend_never_touches_vector(self):
+        """配 bm25 时不建索引、也不判降级（纯 BM25 路径不受影响）。"""
+        d = _scratch_dir()
+        self.addCleanup(_rm, d)
+        r = Retriever(backend="bm25", kb_path=d / "kb.json")
+        r.add_chunks(["加绒牛仔水温不超过30度"], [{"source": "a"}])
+        self.assertFalse(r.sync_vector_index(["x"], [{"source": "z"}]))
+        self.assertEqual(r.effective_backend(), "bm25")
+        self.assertEqual(r.last_degrade, "")
 
 
 class ToolsTest(unittest.TestCase):

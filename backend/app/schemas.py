@@ -80,6 +80,11 @@ class Health(BaseModel):
     model: str = ""
     db_backend: str = ""      # sqlite | mysql
     cache_backend: str = ""   # lru | redis
+    #: 运行时**实际生效**的检索后端。索引不可用/与语料不一致时会降级成 bm25。
+    #: 只看 retrieval_backend（配置层意愿）会被误导——排查请以本字段为准。
+    retrieval_effective: str = ""
+    #: 向量索引状态摘要：status / chunk_count / built_at / last_degrade
+    vector_index: dict = Field(default_factory=dict)
 
 
 class IngestResult(BaseModel):

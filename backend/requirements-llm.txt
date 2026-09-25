@@ -11,6 +11,8 @@ langchain-community>=0.2
 langchain-core>=0.2
 dashscope>=1.20
 
-# --- 向量检索（可选）：取消注释后，检索会从离线 BM25 升级为嵌入相似度 ---
-# 未安装或索引不存在时会自动回退到 BM25，不会报错。
-# faiss-cpu>=1.8
+# --- 向量检索：把检索从离线 BM25 升级为嵌入相似度（dashscope / hybrid 后端） ---
+# 注意：只填 DASHSCOPE_API_KEY 而不装 faiss-cpu 时，检索会一直降级到 BM25
+# （不报错，但 /health 的 retrieval_effective 会显示 bm25、vector_index.status=unavailable）。
+# 装完后建索引：python -m app.retrieval.vector_index
+faiss-cpu>=1.8

@@ -62,13 +62,23 @@ TOP_K = int(os.getenv("TOP_K", "3"))
 RELEVANCE_MIN_COVERAGE = float(os.getenv("RELEVANCE_MIN_COVERAGE", "0.35"))
 
 # Retrieval ---------------------------------------------------------------------
-# Default backend is bm25 (pure-python, offline). Set RETRIEVAL_BACKEND=dashscope
-# to use embedding similarity + FAISS when DASHSCOPE_API_KEY is set.
-RETRIEVAL_BACKEND = os.getenv("RETRIEVAL_BACKEND", "auto").lower()  # auto|bm25|dashscope
+# 后端四选一：
+#   bm25       纯 Python 关键词检索，离线零依赖（兜底，永远可用）
+#   dashscope  向量检索（需 DASHSCOPE_API_KEY + faiss-cpu）
+#   hybrid     BM25 + 向量两路召回，用 RRF 按名次融合（推荐）
+#   auto       有 key 时等价 dashscope，否则 bm25
+# 注意：这里的返回值只是"配置层"的选择；运行时索引不可用/过期会降级 bm25，
+# 实际生效的后端见 Retriever.effective_backend()（并暴露在 /health 里）。
+RETRIEVAL_BACKEND = os.getenv("RETRIEVAL_BACKEND", "auto").lower()
 FAISS_PERSIST_DIR = os.getenv(
     "FAISS_INDEX_DIR",
+    # 必须是纯 ASCII 路径：FAISS 底层 C++ 读不了含中文的路径
     str(Path(os.environ.get("TEMP", "/tmp")) / "ctxeng_faiss_db"),
 )
+VECTOR_INDEX_NAME = os.getenv("VECTOR_INDEX_NAME", "index")
+# 语料变动后（上传/删除）自动重建索引。默认开：否则索引一旦失配就只能降级 BM25。
+# 关掉它可以让检索延迟完全可预测（重建是同步的、会调 embedding）。
+VECTOR_AUTOREBUILD = os.getenv("VECTOR_AUTOREBUILD", "1").lower() in ("1", "true", "yes")
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "500"))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "50"))
 # 切分策略：sentence（按句/段边界打包，默认）| fixed（定长滑窗，baseline）
@@ -124,11 +134,16 @@ def effective_chat_backend() -> str:
 
 
 def effective_retrieval_backend() -> str:
-    """Return which retrieval backend will actually be used."""
+    """配置层想要的检索后端（**不含**运行时降级）。
+
+    向量路需要 DASHSCOPE_API_KEY；没有 key 时无论配什么都退回 bm25。
+    运行时是否真的用上向量，还要看索引是否存在/是否与语料一致——
+    以 ``Retriever.effective_backend()`` 为准（/health 的 retrieval_effective）。
+    """
     if RETRIEVAL_BACKEND == "bm25":
         return "bm25"
-    if RETRIEVAL_BACKEND == "dashscope" and DASHSCOPE_API_KEY:
-        return "dashscope"
+    if RETRIEVAL_BACKEND in ("dashscope", "hybrid"):
+        return RETRIEVAL_BACKEND if DASHSCOPE_API_KEY else "bm25"
     if RETRIEVAL_BACKEND == "auto":
         return "dashscope" if DASHSCOPE_API_KEY else "bm25"
     return "bm25"

@@ -58,10 +58,25 @@ class AppServices:
 
     # -- health ---------------------------------------------------------------------
     def health(self) -> Health:
+        """健康检查。
+
+        ``retrieval_backend`` 是**配置层意愿**，``retrieval_effective`` 才是**实际生效**
+        的后端——两者不一致就说明向量那路没跑起来（依赖缺失 / 索引过期 / 从没建过）。
+        这是排查"为什么没走向量"的第一入口。
+        """
+        try:
+            effective = self.retriever.effective_backend()
+            vector_info = self.retriever.vector.describe(self.retriever.texts)
+            if self.retriever.last_degrade:
+                vector_info["last_degrade"] = self.retriever.last_degrade
+        except Exception:  # 健康检查本身不能挂
+            effective, vector_info = config.effective_retrieval_backend(), {}
         return Health(
             status="ok",
             chat_backend=config.effective_chat_backend(),
             retrieval_backend=config.effective_retrieval_backend(),
+            retrieval_effective=effective,
+            vector_index=vector_info,
             model=self.model.name,
             db_backend=config.effective_db_backend(),
             cache_backend=config.effective_cache_backend(),
@@ -158,6 +173,8 @@ class AppServices:
             "runtime": {
                 "chat_backend": config.effective_chat_backend(),
                 "retrieval_backend": config.effective_retrieval_backend(),
+                "retrieval_effective": self.retriever.effective_backend(),
+                "vector_status": self.retriever.vector_status(),
                 "db_backend": config.effective_db_backend(),
                 "cache_backend": config.effective_cache_backend(),
                 "context_budget": config.CONTEXT_TOKEN_BUDGET,

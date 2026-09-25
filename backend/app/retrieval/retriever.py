@@ -16,7 +16,11 @@ from typing import Optional
 
 from ..schemas import RetrievedChunk
 from .. import config
+from ..logging_config import get_logger, log
 from ..storage.cache import get_cache
+from .vector_index import VectorIndex, VectorStatus
+
+logger = get_logger("app.retrieval")
 
 _TOKEN_RE = re.compile(r"[\u4e00-\u9fff]|[a-zA-Z0-9]+")
 
@@ -120,7 +124,10 @@ class Retriever:
         self.texts: list[str] = []
         self.metas: list[dict] = []
         self.bm25 = BM25Index()
-        self._emb_store = None
+        #: 向量索引：建/追加/落盘/指纹校验都在它内部，这里只做调度与降级判定
+        self.vector = VectorIndex()
+        #: 最近一次降级原因（/health 与日志用；"没降级"时为空串）
+        self.last_degrade = ""
         self._cache = get_cache()  # cache retrieval results (LRU by default)
         self.load()
 
@@ -195,38 +202,98 @@ class Retriever:
         self._cache.set(key, [c.model_dump() for c in result])
         return result
 
+    # -- 向量索引调度 ---------------------------------------------------------------
+    def vector_status(self) -> str:
+        """索引相对当前语料的三态：READY / STALE / UNAVAILABLE。"""
+        return self.vector.status(self.texts)
+
+    def effective_backend(self) -> str:
+        """**运行时实际生效**的后端（含降级判定）。
+
+        与 ``config.effective_retrieval_backend()``（配置层意愿）区分开：
+        配置写着 dashscope、但索引过期或依赖缺失时，这里返回 ``bm25``。
+        /health 的 ``retrieval_effective`` 字段用的就是它——避免"徽章说向量、
+        实际跑 BM25"的误导。
+        """
+        if self.backend not in ("dashscope", "hybrid"):
+            return "bm25"
+        if self.vector_status() != VectorStatus.READY:
+            return "bm25"
+        return "bm25 + dashscope" if self.backend == "hybrid" else "dashscope"
+
+    def _note_degrade(self, reason: str) -> None:
+        """记录一次降级。reason 直接进日志和 /health，便于排障。"""
+        self.last_degrade = reason
+        log(logger, 30, "retrieval.degraded", reason=reason, configured=self.backend)
+
+    def sync_vector_index(self, chunks: list[str], metas: list[dict]) -> bool:
+        """入库后把新分块同步进索引。失败只返回 False（调用方记日志即可）。
+
+        没启用向量后端时直接返回 False —— 不做无谓的 embedding 调用（那是要花钱的）。
+        """
+        if self.backend not in ("dashscope", "hybrid"):
+            return False
+        return self.vector.add_or_rebuild(chunks, metas, self.texts, self.metas)
+
+    def rebuild_vector_index(self) -> bool:
+        """全量重建索引（删除文档后 / 手动重建 / 换 embedding 模型后）。"""
+        if self.backend not in ("dashscope", "hybrid"):
+            return False
+        return self.vector.rebuild(self.texts, self.metas)
+
+    # -- dispatch ------------------------------------------------------------------
     def _search_uncached(self, query: str, k: int) -> list[RetrievedChunk]:
-        if self.backend == "dashscope":
-            vec = self._embed_search(query, k)
-            if vec:
-                return vec
+        """检索分发。**BM25 是地板，不是备胎**：任何异常路径都落到它。
+
+        向量那路的返回值有三态语义（见 ``VectorIndex.search``）：
+        ``None`` 不可用 / ``[]`` 可用但无命中 / ``[...]`` 命中。
+        """
+        if self.backend in ("dashscope", "hybrid"):
+            status = self.vector_status()
+            if status == VectorStatus.READY:
+                vec = self.vector.search(query, k)
+                if vec is None:
+                    self._note_degrade("vector_error")
+                elif self.backend == "hybrid":
+                    # 两路都查，按名次融合（RRF 规避两路分数量纲不可比）
+                    return _rrf_fuse(self.bm25.search(query, k), vec, k)
+                elif vec:
+                    return vec
+                else:
+                    self._note_degrade("vector_no_hit")
+            else:
+                self._note_degrade(status)  # stale / unavailable
         return self.bm25.search(query, k)
 
-    def _embed_search(self, query: str, k: int) -> list[RetrievedChunk]:
-        """FAISS / DashScope embedding similarity (requires key + deps)."""
-        try:
-            from langchain_community.vectorstores import FAISS
-            from langchain_community.embeddings import DashScopeEmbeddings
-        except Exception:
-            return []
-        try:
-            emb = DashScopeEmbeddings(model=config.QWEN_EMBED_MODEL)
-            store = FAISS.load_local(
-                config.FAISS_PERSIST_DIR, emb, index_name="index",
-                allow_dangerous_deserialization=True,
-            )
-            docs = store.similarity_search(query, k=k)
-            return [
-                RetrievedChunk(
-                    text=d.page_content,
-                    meta=dict(d.metadata or {}),
-                    score=1.0,
-                    source=str((d.metadata or {}).get("source", "")),
-                )
-                for d in docs
-            ]
-        except Exception:
-            return []
+
+def _rrf_fuse(
+    lexical: list[RetrievedChunk],
+    vector: list[RetrievedChunk],
+    k: int,
+    *,
+    rrf_k: int = 60,
+) -> list[RetrievedChunk]:
+    """Reciprocal Rank Fusion：按**名次**融合两路召回结果。
+
+    为什么不用分数加权：BM25 的分数无界，向量那路是 (0,1] 的相似度，两者量纲
+    不可比（归一化怎么做都是拍脑袋）。RRF 只看名次 —— ``1/(rrf_k + rank)``，
+    天然绕开这个问题。``rrf_k=60`` 是原论文与 Elasticsearch 都在用的常用值。
+
+    去重键用 ``(source, text[:80])``：同一段资料可能被两路同时召回，
+    这时它的 RRF 分数会叠加（两路都排得前 → 更靠前），这正是融合的意图。
+    """
+    scores: dict[tuple, float] = {}
+    by_key: dict[tuple, RetrievedChunk] = {}
+    for results in (lexical, vector):
+        for rank, chunk in enumerate(results):
+            key = (chunk.source, chunk.text[:80])
+            scores[key] = scores.get(key, 0.0) + 1.0 / (rrf_k + rank + 1)
+            by_key.setdefault(key, chunk)
+    ordered = sorted(scores, key=lambda key: scores[key], reverse=True)[:k]
+    return [
+        by_key[key].model_copy(update={"score": round(scores[key], 6)})
+        for key in ordered
+    ]
 
 
 def get_retriever() -> Retriever:

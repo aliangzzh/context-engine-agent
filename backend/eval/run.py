@@ -51,6 +51,7 @@ from app.context.summarizer import HistorySummarizer  # noqa: E402
 from app.models.fake import FakeModel  # noqa: E402
 from app.retrieval.knowledge import KnowledgeBase  # noqa: E402
 from app.retrieval.retriever import Retriever  # noqa: E402
+from app.retrieval.vector_index import VectorIndex  # noqa: E402
 from app.storage.cache import get_cache  # noqa: E402
 from app.storage.repo import KbRepository  # noqa: E402
 
@@ -90,7 +91,8 @@ class Harness:
     避免评测污染同一进程里的其它测试。
     """
 
-    def __init__(self, *, strategy: str | None = None, run_dir: Path = RUN_DIR) -> None:
+    def __init__(self, *, strategy: str | None = None, retrieval: str | None = None,
+                 run_dir: Path = RUN_DIR) -> None:
         if run_dir.exists():
             shutil.rmtree(run_dir, ignore_errors=True)
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -101,7 +103,15 @@ class Harness:
         install_weather_stub()
         get_cache().clear()
 
-        self.retriever = Retriever(kb_path=run_dir / "kb.json")
+        # 评测必须**确定性**：默认锁 bm25，不跟随本地 RETRIEVAL_BACKEND。
+        # 否则本机装了 faiss + 配了 key 时跑出的是向量结果，与冻结基线不可比，
+        # 回归门就变成了"换台机器就红"的随机门。
+        # 要做检索方案对比（bm25 / dashscope / hybrid），用 --retrieval 显式指定。
+        self.retrieval = (retrieval or "bm25").lower()
+        self.retriever = Retriever(kb_path=run_dir / "kb.json", backend=self.retrieval)
+        # 评测用**独立**索引目录：FAISS_PERSIST_DIR 是全局的，不隔离的话
+        # 跑一次 --retrieval hybrid 就会把线上索引覆盖成评测语料的索引。
+        self.retriever.vector = VectorIndex(index_dir=run_dir / "faiss")
         self.repo = KbRepository(db_path=run_dir)
         self.kb = KnowledgeBase(self.retriever, self.repo)
         self.corpus: list[dict] = []
@@ -293,7 +303,7 @@ def load_dataset(path: Path | None = None) -> dict:
 
 
 def run_eval(*, strategy: str | None = None, category: str | None = None,
-             dataset_path: Path | None = None) -> dict:
+             dataset_path: Path | None = None, retrieval: str | None = None) -> dict:
     dataset_path = dataset_path or DATASET_PATH
     dataset = load_dataset(dataset_path)
     cases = dataset["cases"]
@@ -302,7 +312,7 @@ def run_eval(*, strategy: str | None = None, category: str | None = None,
         if not cases:
             raise SystemExit(f"没有这一类用例：{category}")
 
-    with Harness(strategy=strategy) as harness:
+    with Harness(strategy=strategy, retrieval=retrieval) as harness:
         results = _run_cases(harness, cases)
         env = {
             "chat_backend": config.effective_chat_backend(),
@@ -442,6 +452,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dataset", default="dataset.json",
                         help="题集文件：dataset.json（开发/回归集）或 dataset_holdout.json（留出集）")
     parser.add_argument("--strategy", help="覆盖切分策略：sentence|fixed（做消融对比）")
+    parser.add_argument("--retrieval", default="bm25",
+                        help="检索后端：bm25|dashscope|hybrid（默认 bm25，保证与冻结基线可比）")
     parser.add_argument("--verbose", action="store_true", help="连通过的用例也打印实际信号")
     parser.add_argument("--save-baseline", action="store_true", help="把本次指标写进 baseline.json")
     parser.add_argument("--check", action="store_true", help="与 baseline.json 对比，回退则返回非零")
@@ -452,7 +464,8 @@ def main(argv: list[str] | None = None) -> int:
     dataset_path = Path(args.dataset)
     if not dataset_path.is_absolute():
         dataset_path = EVAL_DIR / dataset_path
-    report = run_eval(strategy=args.strategy, category=args.category, dataset_path=dataset_path)
+    report = run_eval(strategy=args.strategy, category=args.category,
+                      dataset_path=dataset_path, retrieval=args.retrieval)
     print_report(report, verbose=args.verbose)
 
     save_json(REPORTS_DIR / "latest.json", report)
