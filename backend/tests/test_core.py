@@ -345,6 +345,31 @@ class RetrieverTest(unittest.TestCase):
         self.assertEqual(kb.ingest_text("一些知识内容", "test.txt")["status"], "skipped")
         self.assertEqual(len(r.texts), 1)
 
+    def test_py_file_supported(self):
+        """代码知识库：``.py`` 能入库，且按行切分不会切断标识符。
+
+        代码**不需要**换成定长滑窗：``_SENT_SPLIT`` 把 ``\\n`` 也当边界，而代码的
+        自然边界就是行；定长滑窗反而会把 ``_search_uncached`` 从中间劈开。
+        """
+        d = _scratch_dir()
+        self.addCleanup(_rm, d)
+        r = Retriever(backend="bm25", kb_path=d / "kb.json")
+        kb = KnowledgeBase(r, repo=KbRepository(db_path=d / "app.db"))
+        src = d / "demo.py"
+        src.write_text(
+            "def _search_uncached(self, query, k):\n"
+            "    if self.backend in ('dashscope', 'hybrid'):\n"
+            "        return self.vector.search(query, k)\n"
+            "    return self.bm25.search(query, k)\n",
+            encoding="utf-8",
+        )
+        res = kb.ingest_file(src)
+        self.assertEqual(res["status"], "ingested")
+        # 标识符完整（按行切分的结果，而不是被字符滑窗劈开）
+        self.assertTrue(any("_search_uncached" in t for t in r.texts))
+        # 能被检索到：BM25 的字符级分词会把 _search_uncached 拆成 search/uncached
+        self.assertTrue(r.search("search_uncached 是怎么分发的"))
+
 
 class VectorIndexTest(unittest.TestCase):
     """向量索引：三态判定 / 指纹 / 写入失败 / 降级 / RRF 融合。

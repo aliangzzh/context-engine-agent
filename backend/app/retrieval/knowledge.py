@@ -20,8 +20,12 @@ from .retriever import get_retriever
 
 logger = get_logger("app.retrieval.knowledge")
 
-#: 文档解析支持的纯文本类型
-_TEXT_SUFFIXES = {".txt", ".md", ".markdown", ".csv", ".json", ".log"}
+#: 文档解析支持的纯文本类型。
+#:
+#: 含 ``.py``（代码知识库场景）。**代码不需要换切分策略**：``_SENT_SPLIT`` 把
+#: 换行也当作边界，而代码的自然边界就是行 —— 按行切分能保住完整标识符；
+#: 换成定长滑窗反而会把 ``_search_uncached`` 这类标识符从中间劈开。
+_TEXT_SUFFIXES = {".txt", ".md", ".markdown", ".csv", ".json", ".log", ".py"}
 
 _SENT_SPLIT = re.compile(r"(?<=[。！？!?；;\n])")
 
