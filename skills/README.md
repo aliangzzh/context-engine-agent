@@ -169,3 +169,61 @@ python -m scripts.collect_experience sync
 2. **`/health` 里 `model` 是 `fake`** → 离线回放模式，回答带 `【离线演示】` 前缀，只能证明"技能进了上下文"；接了真模型才看得到"按经验作答"。
 3. **改了技能文件没生效** → 跑一次 `sync`（索引不会自己发现文件变了）。日志里的
    `retrieval.degraded reason=stale` 是**业务知识库**的向量索引过期后的正常降级，与技能库无关。
+
+### 6.8 完整流程（照着做一遍：从对话到技能）
+
+下面这 7 步就是全部流程，**只有第 2、3 步需要人做判断**，其余都是命令。
+
+```powershell
+# 0) 起服务（可选，第 5 步验证时要用）
+双击 F:\shujuf\code\context-engine-agent\start_all.bat
+
+cd F:\shujuf\code\context-engine-agent\backend
+
+# 1) 起草：先看，再写
+..\.venv\Scripts\python.exe -m scripts.collect_experience from-chat --top 6 --verbose  # 只看候选
+..\.venv\Scripts\python.exe -m scripts.collect_experience from-chat --write            # 落进 _inbox/
+#    （另一条入口：从文档抽  ->  ... collect_experience draft）
+#    看什么：分数 / 类别命中 N/3 / 轮数 / 是否标了 ⚠ 重复。标 ⚠ 的先别管。
+```
+
+```powershell
+# 2) ★闸门（人工）：打开草稿，回答三个问题
+notepad F:\shujuf\code\context-engine-agent\skills\_inbox\<那份草稿>.md
+#    ① 真踩过吗（能指出当时的报错/现象）？
+#    ② 验证指向哪个文件 / 哪条测试？
+#    ③ 和已有技能重复吗（重复就合并，不要新增）？
+#    过不了就删掉它 —— 这一步是整套流程里唯一的质量关。
+```
+
+```powershell
+# 3) ★提升：建目录 + 写 SKILL.md（目录名 = front-matter 的 name，kebab-case）
+mkdir F:\shujuf\code\context-engine-agent\skills\env-key-placeholder
+notepad F:\shujuf\code\context-engine-agent\skills\env-key-placeholder\SKILL.md
+#    正文按四段式写：规则 / 反例（现象·根因·修复·验证）/ 自查；控制在 40~80 行
+#    「验证」必须指向真实存在的文件或测试，否则这条技能迟早会被发现是编的
+```
+
+```powershell
+# 4) 校验 + 入库
+..\.venv\Scripts\python.exe -m scripts.collect_experience check   # 期望：[OK] env-key-placeholder
+..\.venv\Scripts\python.exe -m scripts.collect_experience sync     # 期望：变化 ['env-key-placeholder']
+```
+
+```powershell
+# 5) 验证命中（页面上问一句，必须带触发词：经验/坑/技能库/教训/skill）
+#    问「我把 .env 里的 key 写成占位符，请求全失败，有经验吗」→ 看三处证据：
+#      ① Agent 链：skill 技能命中 1 条，注入上下文 1 条 | injected skill:env-key-placeholder
+#      ② 上下文面板：技能（开发经验） prio 115
+#      ③ 回答：按这条技能的规则作答
+#    不想开界面也可以：GET /api/skills 看列表；POST /api/chat 看 data.skills
+```
+
+```powershell
+# 6) 维护
+#    改内容 → 把 front-matter 的 version +1、updated 改当天 → check → sync
+#    想立刻生效：页面「技能」页点「重新同步语料」（刷新进程内缓存，不用重启服务）
+#    废弃：status 改 deprecated（保留在库里，但不再参与匹配）
+```
+
+**每一步的卡点**：第 1 步没候选 → 那段对话里没有"现象词"（换个说法再问一次）；第 4 步 `check` 报跳过 → 看它给的原因（缺字段 / name 与目录名不一致）；第 5 步没命中 → 问句缺触发词，或忘了 `sync`，或服务还是旧进程。
