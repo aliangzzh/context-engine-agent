@@ -149,7 +149,7 @@ docker compose up --build
 | POST | `/api/skills/sync` | 重新同步技能语料（md5 幂等；页面「重新同步」走这里） |
 | GET | `/api/skills/drafts` | 草稿区列表（`skills/_inbox/`，含来源与"是否与已有技能重复"提示） |
 | DELETE | `/api/skills/drafts/{name}` | 移除草稿 → **归档**到 `_inbox/_trash/`（不是真删，草稿不在 Git 里） |
-| POST | `/api/skills/draft-from-chat` | 把某一轮所在的**事件片段**沉淀成草稿（页面「沉淀为经验」；重复返回 200 + `duplicate`，历史错位返回 409） |
+| POST | `/api/skills/draft-from-chat` | 把某一轮所在的**事件片段**沉淀成草稿（页面「沉淀为经验」；**按提问文本定位那一轮**、不依赖页面索引，重复返回 200 + `duplicate`，找不到该提问返回 404） |
 | POST | `/api/feedback` | 提交 badcase |
 | GET | `/api/feedback?page&size` | badcase 列表 |
 | GET | `/api/context/{session_id}` | 会话历史（上下文面板用） |

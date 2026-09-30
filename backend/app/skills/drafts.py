@@ -123,6 +123,37 @@ def archive_draft(name: str) -> dict:
     }
 
 
+def _locate_turn(turns: list, turn_index: int, expected_user: str) -> int:
+    """定位要沉淀的那一轮：**优先按提问文本找**，没有文本才退回索引。
+
+    为什么优先按文本：页面上显示的可能只是完整历史的一部分（刷新过页面、或同一个
+    session 用了很久），此时"页面第 N 轮"和"库里第 N 轮"根本不是同一轮 —— 这正是
+    实测踩到的坑：按索引定位会对不上，于是报"对话记录已变化"。
+
+    按文本定位既**不依赖页面状态**，又不会归档到错误的一轮；同一个问题问过多次时
+    取**最近一次**（"沉淀刚才这条"的语义）。
+    """
+    def norm(text: str) -> str:
+        return " ".join((text or "").split())
+
+    wanted = norm(expected_user)
+    if wanted:
+        for index in range(len(turns), 0, -1):
+            if norm(getattr(turns[index - 1], "user", "")) == wanted:
+                return index
+        raise AppError(
+            ErrorCode.NOT_FOUND,
+            "这个会话里找不到这条提问（页面显示的可能不是完整历史）。"
+            "刷新页面后重试；若是刚编辑过的提问，重新发一次再沉淀。",
+        )
+
+    index = int(turn_index or 0)
+    if not 1 <= index <= len(turns):
+        raise AppError(ErrorCode.VALIDATION_ERROR,
+                       f"轮次 {index} 超出范围（该会话共 {len(turns)} 轮）")
+    return index
+
+
 def create_from_chat(session_id: str, turn_index: int, expected_user: str = "") -> dict:
     """从某一轮所在的**事件片段**生成草稿（对话页「沉淀为经验」按钮）。
 
@@ -141,14 +172,7 @@ def create_from_chat(session_id: str, turn_index: int, expected_user: str = "") 
     turns = ChatStore(config.DATA_DIR / "chat_history").load(session_id)
     if not turns:
         raise AppError(ErrorCode.NOT_FOUND, f"会话 {session_id} 没有对话记录")
-    index = int(turn_index or 0)
-    if not 1 <= index <= len(turns):
-        raise AppError(ErrorCode.VALIDATION_ERROR,
-                       f"轮次 {index} 超出范围（该会话共 {len(turns)} 轮）")
-    actual = (turns[index - 1].user or "").strip()
-    if expected_user and expected_user.strip() != actual:
-        # 历史被重写过 / 页面是旧的 → 明确拒绝，而不是默默归档到错误的轮次
-        raise AppError(ErrorCode.CONFLICT, "对话记录已变化，请刷新页面后重试")
+    index = _locate_turn(turns, turn_index, expected_user)
 
     segment = next(
         (s for s in segments_from_turns(session_id, turns)

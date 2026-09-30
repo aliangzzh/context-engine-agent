@@ -206,8 +206,8 @@ async def skill_draft_archive(name: str) -> dict:
 
 
 @app.post("/api/skills/draft-from-chat", tags=["skills"],
-          summary="把某一轮对话沉淀成草稿（人工显式信号，仍然查重）",
-          responses={409: {"description": "对话记录已变化，请刷新(40900)"}})
+          summary="把某一轮对话沉淀成草稿（按提问文本定位；人工显式信号，仍然查重）",
+          responses={404: {"description": "会话不存在，或会话里找不到该提问(40400)"}})
 async def skill_draft_from_chat(payload: dict) -> dict:
     status, body = await run_in_threadpool(api.handle_skill_draft_from_chat, payload or {})
     return JSONResponse(status_code=status, content=body)

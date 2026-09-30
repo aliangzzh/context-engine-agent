@@ -156,15 +156,34 @@ class CreateFromChatTest(_DraftCase):
         self.assertEqual(result["categories"], 1)
         self.assertEqual(result["signals"]["symptom"], [])
 
-    def test_bad_index_and_stale_history(self):
+    def test_bad_index_without_text_is_rejected(self):
         self._store(GOOD_TURNS)
         with self.assertRaises(AppError) as ctx:
             drafts.create_from_chat("d-1", 99)
         self.assertEqual(ctx.exception.code, ErrorCode.VALIDATION_ERROR)
 
-        with self.assertRaises(AppError) as ctx2:
-            drafts.create_from_chat("d-1", 1, "这句和库里那一轮对不上")
-        self.assertEqual(ctx2.exception.code, ErrorCode.CONFLICT)
+    def test_locates_turn_by_question_text_even_when_index_drifts(self):
+        """回归：页面上只显示一部分历史时，索引会对不上 —— 必须按提问文本定位。
+
+        真实踩过：同一个 session 聊了很久（库里 12 轮），页面刷新后只剩当前几轮，
+        于是"页面第 1 轮"和"库里第 1 轮"不是同一轮，按索引比对会报"对话记录已变化"。
+        """
+        self._store([
+            HistoryTurn(user="加绒牛仔怎么洗", assistant="水温不超过30度"),
+            HistoryTurn(user="上海天气", assistant="晴，26℃"),
+            *GOOD_TURNS,
+        ])
+        # 客户端说"第 1 轮"，但提问文本其实是第 3 轮 —— 应按文本落到第 3 轮
+        result = drafts.create_from_chat("d-1", 1, GOOD_TURNS[0].user)
+        self.assertIsNotNone(result["created"])
+        self.assertEqual(result["start"], 3)
+        self.assertIn("-3-", result["created"])
+
+    def test_unknown_question_is_not_found(self):
+        self._store(GOOD_TURNS)
+        with self.assertRaises(AppError) as ctx:
+            drafts.create_from_chat("d-1", 1, "这句提问在库里根本不存在")
+        self.assertEqual(ctx.exception.code, ErrorCode.NOT_FOUND)
 
     def test_missing_session_is_not_found(self):
         self._store(GOOD_TURNS)
