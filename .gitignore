@@ -29,6 +29,8 @@ backend/eval/reports/
 
 # 技能库：正文（skills/）进版本库；派生语料与索引不进
 backend/data/skills/
+# 技能草稿区（skills/_inbox/）：对话记录 / 待补全草稿属于本地素材，不进版本库
+skills/_inbox/
 
 # Node
 node_modules/

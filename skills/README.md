@@ -135,6 +135,15 @@ python -m scripts.collect_experience check
 python -m scripts.collect_experience sync
 ```
 
+> `skills/_inbox/` 是**草稿区**：loader 只认 `*/SKILL.md`，所以草稿再乱也**不会进检索语料**；
+> 它同时已加进 `.gitignore`（草稿属于本地素材，不进版本库）。
+>
+> **把一段对话变成技能**（目前是手工闭环，`draft --from-chat` 还没做）：
+> ① 把「来源会话 + 问题 + 回答要点 + 证据」记成一份草稿（原始素材，什么都有）；
+> ② 压成四段式（现象 / 根因 / 修复 / 验证），仍放 `_inbox/`，**标清 TODO**；
+> ③ 补全后移到 `skills/<name>/SKILL.md` → `check` → `sync` → 立刻可被 Agent 命中。
+> 关键是第 ② 步不要跳过：原始问答直接当技能会变成垃圾堆，还会挤掉上下文预算（一条技能约 846 token）。
+
 ### 6.7 看不到效果时的三个排查点
 
 1. **问句里没有触发词** → 路由不会走技能节点（刻意的精准门：宁可漏、不要错）。补一句"有经验吗 / 踩过坑吗"。
