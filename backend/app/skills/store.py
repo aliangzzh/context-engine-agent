@@ -144,11 +144,41 @@ def sync_skills(skills: list[Skill], *, force: bool = False) -> dict:
     return {"changed": changed, "removed": removed, "chunks": len(texts), "rebuilt": True}
 
 
+def _memory_sources() -> set[str]:
+    """**这个进程内存里**的语料来源集合（不是磁盘上的）。"""
+    return {str((m or {}).get("source", "")) for m in get_skill_retriever().metas}
+
+
 def ensure_synced(skills: list[Skill], *, force: bool = False) -> dict:
-    """调用方（工具 / 接口）用这个：需要就同步，不需要就跳过。"""
+    """调用方（工具 / Agent 节点 / 接口）用这个：需要就同步，不需要就跳过。
+
+    两种"需要"必须分清 —— 只认第一种会踩坑（真实故障：新技能**命中 1 条、注入 0 条**）：
+
+    1. **磁盘语料 ≠ skills/ 的文件** → 重建语料（会调 embedding）；
+    2. 磁盘是最新的，但**这个进程内存里的语料是旧的**（长跑服务 / 多进程部署，
+       另一个进程已经同步过）→ 重读磁盘 + 清检索缓存，**不做 embedding**。
+
+    第 2 种以前被漏掉了：``needs_sync`` 只比对"文件 vs 磁盘清单"，于是进程内的旧
+    语料会一直用下去；更糟的是那次"查不到"的结果被检索缓存住，同一个问题从此永远返回空。
+    """
+    retriever = get_skill_retriever()
+    expected = {f"skill:{s.name}" for s in skills}
+
     if not force and not needs_sync(skills):
-        retriever = get_skill_retriever()
-        return {"changed": [], "removed": [], "chunks": len(retriever.texts), "rebuilt": False}
+        in_memory = _memory_sources()
+        if in_memory == expected:
+            return {"changed": [], "removed": [], "chunks": len(retriever.texts), "rebuilt": False}
+        # 磁盘是最新的，内存落后：只重读 + 清缓存（重建要花 embedding 钱，没必要）
+        retriever.load()
+        retriever.clear_cache()
+        return {
+            "changed": sorted(expected - in_memory),
+            "removed": sorted(in_memory - expected),
+            "chunks": len(retriever.texts),
+            "rebuilt": False,
+            "reloaded": True,
+        }
+
     return sync_skills(skills, force=force)
 
 

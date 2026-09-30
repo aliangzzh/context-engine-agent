@@ -173,13 +173,22 @@ class Retriever:
         payload = {"chunks": [{"text": t, "meta": m} for t, m in zip(self.texts, self.metas)]}
         self.kb_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
+    def clear_cache(self) -> None:
+        """清掉检索结果缓存。
+
+        语料被换过之后**必须**调：否则"换语料前查不到"的结果会被缓存住，
+        同一个问题在换语料之后仍然返回空（真实故障：技能库里新增了一条技能，
+        但旧的空结果被缓存，表现为"命中 1 条、注入 0 条"）。
+        """
+        self._cache.clear()
+
     def add_chunks(self, texts: list[str], metas: list[dict]) -> None:
         self.texts.extend(texts)
         self.metas.extend(metas)
         self.bm25.add_documents(texts, metas)
         self._persist()
         # the underlying corpus changed -> previously cached results are stale
-        self._cache.clear()
+        self.clear_cache()
 
     def replace_all(self, texts: list[str], metas: list[dict]) -> None:
         """整体替换语料（删除文档后重建索引用）。"""
@@ -189,7 +198,7 @@ class Retriever:
         if self.texts:
             self.bm25.add_documents(self.texts, self.metas)
         self._persist()
-        self._cache.clear()
+        self.clear_cache()
 
     def remove_source(self, source: str) -> int:
         """删除某个来源的全部 chunk，返回删除条数（索引 + 落盘一起更新）。"""

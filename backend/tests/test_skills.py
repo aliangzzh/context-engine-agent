@@ -24,13 +24,16 @@ from app.models.fake import FakeModel
 from app.retrieval.retriever import Retriever
 from app.schemas import RetrievedChunk
 from app.skills import (
+    ensure_synced,
     get_skill_retriever,
     get_skills,
+    needs_sync,
     parse_skill,
     reset_skill_retriever,
     reset_skills,
     search_skill_corpus,
     search_skills,
+    skill_text,
     sync_skills,
 )
 from app.skills.loader import SkillError, load_skills
@@ -193,6 +196,21 @@ class SkillConfigTest(unittest.TestCase):
         self.assertGreaterEqual(config.SKILL_TOP_K, 1)
 
 
+def _simulate_stale_memory(retriever, keep) -> None:
+    """只在**内存**里退回旧语料（不动磁盘）。
+
+    模拟"长跑进程启动时加载的是旧的一版"：磁盘上的 kb.json 是最新的，
+    但这个进程的 texts/metas/bm25 还是旧的。注意不能用 ``replace_all()`` ——
+    它会把磁盘语料一起改掉，那就变成"磁盘也旧了"，测不到要测的路径。
+    """
+    from app.retrieval.retriever import BM25Index
+
+    retriever.texts = [skill_text(s) for s in keep]
+    retriever.metas = [{"source": f"skill:{s.name}"} for s in keep]
+    retriever.bm25 = BM25Index()
+    retriever.bm25.add_documents(retriever.texts, retriever.metas)
+
+
 class SkillCorpusTest(_OfflineSkillCorpus):
     """技能语料（派生数据）：与业务库物理隔离、幂等同步、删除不留幽灵。"""
 
@@ -233,6 +251,44 @@ class SkillCorpusTest(_OfflineSkillCorpus):
         hits = search_skill_corpus("工具参数抽取", k=3)
         self.assertTrue(hits)
         self.assertIn("tool-arg-extraction", " ".join(str(h.source) for h in hits))
+
+    def test_ensure_synced_reloads_when_memory_is_behind_disk(self):
+        """进程内语料落后于磁盘时必须重读，而不是"md5 一致就跳过"。
+
+        真实故障：长跑服务启动时语料是 4 条技能，之后仓库新增了第 5 条、磁盘清单也被
+        另一个进程同步过 → ``needs_sync=False`` → ``ensure_synced`` 直接返回 →
+        新技能表现为"**命中 1 条、注入 0 条**"。
+        """
+        loaded = get_skills(reload=True)
+        sync_skills(loaded.skills, force=True)          # 磁盘 = 全部技能
+        retriever = get_skill_retriever()
+        keep = [s for s in loaded.skills if s.name != "global-index-isolation"]
+        _simulate_stale_memory(retriever, keep)         # 内存退回旧版本
+        self.assertFalse(needs_sync(loaded.skills), "磁盘仍然是最新的")
+
+        summary = ensure_synced(loaded.skills)
+
+        self.assertTrue(summary.get("reloaded"), f"应触发重读：{summary}")
+        self.assertEqual(len(retriever.texts), len(loaded.skills))
+        hits = search_skill_corpus("向量索引被覆盖 怎么排查", k=5)
+        self.assertIn("skill:global-index-isolation", [str(h.source) for h in hits])
+
+    def test_reload_clears_stale_retrieval_cache(self):
+        """重读语料必须清检索缓存，否则"换语料前查不到"的结果会一直命中。"""
+        loaded = get_skills(reload=True)
+        sync_skills(loaded.skills, force=True)
+        retriever = get_skill_retriever()
+        keep = [s for s in loaded.skills if s.name != "global-index-isolation"]
+        _simulate_stale_memory(retriever, keep)
+
+        query = "向量索引被覆盖 怎么排查"
+        before = [str(h.source) for h in search_skill_corpus(query, k=5)]
+        self.assertNotIn("skill:global-index-isolation", before, "旧语料里不该有它，且这次结果进了缓存")
+
+        ensure_synced(loaded.skills)
+
+        after = [str(h.source) for h in search_skill_corpus(query, k=5)]
+        self.assertIn("skill:global-index-isolation", after, "重读 + 清缓存之后必须能命中")
 
     def test_removed_skill_leaves_no_ghost_hits(self):
         """技能被删掉后语料必须同步移除，否则会出现"删了还命中"的幽灵结果。"""
