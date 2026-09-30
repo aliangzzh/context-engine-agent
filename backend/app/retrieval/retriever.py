@@ -12,6 +12,7 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter
+from pathlib import Path
 from typing import Optional
 
 from ..schemas import RetrievedChunk
@@ -137,6 +138,13 @@ class Retriever:
         #: 向量索引：建/追加/落盘/指纹校验都在它内部，这里只做调度与降级判定。
         #: 并列语料**必须换 index_dir**：index_meta.json 是按目录放的，同目录换个名字
         #: 仍然共用同一份指纹文件 → 表现为"恒 STALE、永远降级 BM25"（踩过一次）。
+        #:
+        #: **索引跟着语料走**：调用方给了自定义 kb_path（评测 / 测试 / 别的语料库）时，
+        #: 索引默认放到那份语料旁边，而不是共用全局 FAISS_PERSIST_DIR —— 否则一次
+        #: "拿临时语料跑个流程"就会把线上索引覆盖掉（真实踩过：tests/test_api.py 用
+        #: scratch kb 跑，把业务索引写成 1 块，之后 /health 恒 stale、检索永久降级）。
+        if index_dir is None and kb_path is not None:
+            index_dir = Path(self.kb_path).parent / "faiss"
         self.vector = VectorIndex(index_dir=index_dir, index_name=index_name or config.VECTOR_INDEX_NAME)
         #: 最近一次降级原因（/health 与日志用；"没降级"时为空串）
         self.last_degrade = ""

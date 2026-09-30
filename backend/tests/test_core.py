@@ -603,5 +603,30 @@ class OrchestratorTest(unittest.TestCase):
         self.assertIn("router", kinds)
 
 
+class RetrieverIndexIsolationTest(unittest.TestCase):
+    """索引必须跟着语料走：自定义 kb_path 不能共用全局索引目录。
+
+    真实踩过：``tests/test_api.py`` 用 scratch 语料跑流程，把全局业务索引
+    （``F:\\ctxeng_faiss_db``）重建成了 1 块 —— 之后 /health 恒 STALE、
+    检索永久降级 BM25，而 CI 因为没装 faiss 完全没暴露。
+    """
+
+    def test_custom_kb_path_gets_its_own_index_dir(self):
+        d = _scratch_dir()
+        self.addCleanup(_rm, d)
+        r = Retriever(backend="bm25", kb_path=d / "kb.json")
+        self.assertEqual(Path(r.vector.dir), d / "faiss")
+
+    def test_default_kb_path_keeps_the_global_index_dir(self):
+        r = Retriever(backend="bm25")
+        self.assertEqual(Path(r.vector.dir), Path(config.FAISS_PERSIST_DIR))
+
+    def test_explicit_index_dir_still_wins(self):
+        d = _scratch_dir()
+        self.addCleanup(_rm, d)
+        r = Retriever(backend="bm25", kb_path=d / "kb.json", index_dir=d / "custom")
+        self.assertEqual(Path(r.vector.dir), d / "custom")
+
+
 if __name__ == "__main__":
     unittest.main()

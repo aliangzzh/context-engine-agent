@@ -58,10 +58,17 @@ class _IsolatedServices(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = _scratch_dir()
-        cls._orig = {k: getattr(config, k) for k in ("DATA_DIR", "KB_DIR", "DB_PATH")}
+        cls._orig = {k: getattr(config, k) for k in (
+            "DATA_DIR", "KB_DIR", "DB_PATH", "FAISS_PERSIST_DIR", "SKILL_INDEX_DIR",
+        )}
         config.DATA_DIR = cls.tmp / "data"
         config.KB_DIR = config.DATA_DIR / "kb"
         config.DB_PATH = config.DATA_DIR / "app.db"
+        # 向量索引目录也必须隔离：它是全局目录，不隔离的话一次"用临时语料跑流程"
+        # 就会把线上索引覆盖成测试语料（真实踩过：业务索引被写成 1 块，
+        # 之后 /health 恒 stale、检索永久降级 BM25；CI 因为没装 faiss 没暴露）。
+        config.FAISS_PERSIST_DIR = cls.tmp / "faiss"
+        config.SKILL_INDEX_DIR = cls.tmp / "faiss_skills"
         api.reset_services()
 
     @classmethod
