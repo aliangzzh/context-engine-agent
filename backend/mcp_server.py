@@ -39,6 +39,16 @@ _TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "required": ["expression"],
     },
     "current_time": {"type": "object", "properties": {}},
+    "search_skill": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "要检索的经验关键词或问题，如「工具参数怎么抽」",
+            }
+        },
+        "required": ["query"],
+    },
 }
 
 

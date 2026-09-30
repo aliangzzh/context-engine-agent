@@ -119,6 +119,8 @@ class AgentOrchestrator:
             return "没能从提问里识别出城市名，请补充城市（例如：北京今天天气怎么样）"
         if name == "calculator":
             return "没能识别出算式，请给出具体表达式（例如：计算 12*34+5）"
+        if name == "search_skill":
+            return "没能识别出要检索的经验关键词，请补充（例如：工具参数怎么抽）"
         return f"工具 {name} 缺少必要参数"
 
     def prepare(self, user_input: str, session_id: str = "default") -> RunResult:

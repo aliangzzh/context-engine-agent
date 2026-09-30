@@ -20,7 +20,9 @@ from typing import Callable
 
 import requests
 
+from .. import config
 from ..decorators import retry, timed
+from ..skills import get_skills, search_skills
 
 TIMEOUT = 8
 
@@ -130,6 +132,37 @@ def current_time() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
+# --- 开发经验技能检索（skills/ 目录，规范见 skills/README.md） -------------------------
+@timed("tool.search_skill")
+def search_skill(query: str) -> str:
+    """按关键词检索技能库，返回命中技能的规则正文。
+
+    为什么单独做成一个工具、而不是把技能塞进业务知识库：两者是**两套语料**——
+    混在一个索引里会互相挤掉 top-k，还会共用缓存 key（见 docs/skill-plan.md §2）。
+    工具边界清楚，也方便外部编码 Agent 通过 MCP 直接调用。
+    """
+    query = (query or "").strip()
+    if not query:
+        return "请给出要检索的关键词（例如：工具参数怎么抽）"
+    if not config.SKILL_ENABLED:
+        return "技能库当前已关闭（SKILL_ENABLED=0）"
+
+    loaded = get_skills()
+    matches = search_skills(query, loaded.skills, top_k=config.SKILL_TOP_K)
+    if not matches:
+        # 没有就如实说没有（不硬凑一条），顺带提示有文件被跳过——写错的技能要能被发现
+        hint = f"（另有 {len(loaded.skipped)} 个技能文件格式有问题被跳过）" if loaded.skipped else ""
+        return f"技能库中没有与「{query}」相关的经验{hint}"
+
+    blocks = []
+    for m in matches:
+        blocks.append(
+            f"【技能 {m.skill.name}】命中：{'、'.join(m.hits)}｜来源：{m.skill.path}\n"
+            f"{m.skill.description}\n{m.skill.body[:800]}"
+        )
+    return "\n\n".join(blocks)
+
+
 # --- 参数抽取（自然语言 -> 工具参数） -------------------------------------------------
 _CN_DIGITS = str.maketrans("０１２３４５６７８９", "0123456789")
 #: 全角括号/运算符归一化：不还原的话「（18+6）乘以3」会被抽成 "18+6"，算出 24（错答案）
@@ -216,6 +249,10 @@ def extract_args(name: str, user_input: str) -> dict:
     if name == "calculator":
         expr = _extract_expression(user_input)
         return {"expression": expr} if expr else {}
+    if name == "search_skill":
+        # 检索类工具是"整句就是 query"的例外：这里要的正是用户原话（其它工具都不行）
+        text = (user_input or "").strip()
+        return {"query": text} if text else {}
     return {}
 
 
@@ -223,13 +260,16 @@ TOOLS: dict[str, Tool] = {}
 
 
 def _register(name: str, desc: str, params: dict):
-    f = {"get_weather": get_weather, "calculator": calculator, "current_time": current_time}[name]
+    f = {"get_weather": get_weather, "calculator": calculator, "current_time": current_time,
+         "search_skill": search_skill}[name]
     TOOLS[name] = Tool(name, desc, f, params)
 
 
 _register("get_weather", "查询指定城市的当前天气", {"city": "城市名"})
 _register("calculator", "计算一个数学表达式", {"expression": "数学算式，如 3*4+2"})
 _register("current_time", "获取当前时间", {})
+_register("search_skill", "检索开发经验技能库（踩过的坑 / 最佳实践），返回技能规则正文",
+          {"query": "要检索的关键词或问题"})
 
 
 def get_tool(name: str) -> Tool | None:

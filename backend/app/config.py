@@ -86,6 +86,14 @@ CHUNK_STRATEGY = os.getenv("CHUNK_STRATEGY", "sentence").lower()
 # 单个上传文件的大小上限（字节）
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(2 * 1024 * 1024)))
 
+# Skills（开发经验技能库）-----------------------------------------------------------
+# 技能正文的唯一真源是仓库根的 skills/（一个技能一个文件夹：SKILL.md + references/），
+# 文件进 Git（可 review、可 diff、可回滚），索引与命中统计是派生数据。
+# SKILL_ENABLED=0 可以整体关掉技能这条路（回滚方案的第一条）。
+SKILL_ENABLED = os.getenv("SKILL_ENABLED", "1").lower() in ("1", "true", "yes")
+SKILL_DIR = Path(os.getenv("SKILL_DIR", str(PROJECT_DIR / "skills")))
+SKILL_TOP_K = int(os.getenv("SKILL_TOP_K", "2"))
+
 # Storage / DB -------------------------------------------------------------------
 # Conversational history is persisted to a relational store.
 #   * Default: a local SQLite file (stdlib sqlite3, zero deps, offline).

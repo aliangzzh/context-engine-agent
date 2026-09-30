@@ -16,6 +16,10 @@ _KB_KEYWORDS = (
 _WEATHER = ("天气", "气温", "温度", "多少度", "几度", "下雨", "下雪", "weather", "晴", "冷", "热")
 _TIME = ("几点", "时间", "现在", "time", "日期", "几号", "星期")
 
+#: 技能库（开发经验）触发词。刻意保持窄：宁可漏命中（退化成没有技能库），
+#: 也不要误命中（拿不相干的经验去改代码）。见 app/skills/matcher.py 的说明。
+_SKILL_KEYWORDS = ("经验", "踩坑", "技能库", "教训", "skill")
+
 #: 中文运算符也要能被认成算式：「12乘34加5等于多少」在旧版走不到计算器。
 #: 必须夹在数字之间才算（否则「加绒牛仔」的「加」会误判成计算）。
 _CN_CALC_RE = re.compile(r"\d\s*(?:乘以|乘|加上|加|减去|减|除以|除|×|÷)\s*[\(（]?\s*\d")
@@ -48,6 +52,8 @@ def route(user_input: str, kb_relevant: bool = False) -> list[str]:
         steps.append("tool:get_weather")
     if any(k in text for k in _TIME):
         steps.append("tool:current_time")
+    if any(k in text for k in _SKILL_KEYWORDS):
+        steps.append("tool:search_skill")
 
     wants_kb = any(k in text for k in _KB_KEYWORDS) or kb_relevant
     if not steps:
