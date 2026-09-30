@@ -8,7 +8,9 @@
 // 打开后，页面照常调用 api 层，但数据来自这里的假数据 —— 组件、分页、校验、
 // 图表渲染路径全部走通，等后端接口 ready 只需要把开关关掉。
 import { ref } from 'vue'
-import type { FeedbackItem, KbSource, PageResult, SkillItem, SkillPayload, StatsPayload } from '../api'
+import type {
+  FeedbackItem, KbSource, PageResult, SkillDraftsPayload, SkillItem, SkillPayload, StatsPayload,
+} from '../api'
 
 const KEY = 'useMock'
 
@@ -85,6 +87,33 @@ export function mockSkillList(): SkillPayload {
     },
     skills: MOCK_SKILLS,
     skipped: [],
+  }
+}
+
+export function mockSkillDrafts(): SkillDraftsPayload {
+  return {
+    drafts: [
+      {
+        name: 'chat-demo-1-接口字段前后端对不上，之前有踩坑经验吗.md',
+        size: 2431,
+        modified_at: '2026-10-01 10:20',
+        source: '对话抽取',
+        question: '接口字段前后端对不上，之前有踩坑经验吗',
+        content: '<!-- 草稿：AI 抽取 · 未验证 -->\n\n# 接口字段前后端对不上\n\n## 待提炼（四段式）\n\n- **现象**：TODO\n',
+        duplicate: null,
+      },
+      {
+        name: '02-global-index-isolation（待补全）.md',
+        size: 1272,
+        modified_at: '2026-09-30 22:05',
+        source: '手工/其它',
+        question: 'global-index-isolation（待补全）',
+        content: '<!-- 手工草稿 -->\n\n# 索引被测试覆盖\n',
+        duplicate: ['skill:global-index-isolation', 0.86],
+      },
+    ],
+    inbox: 'F:/ctxeng/skills/_inbox',
+    trash_count: 1,
   }
 }
 

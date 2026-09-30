@@ -147,6 +147,9 @@ docker compose up --build
 | DELETE | `/api/kb/{source}` | 按来源删除（同时清检索索引与 md5 指纹） |
 | GET | `/api/skills` | 技能库列表（含语料状态与格式有问题的文件；`?reload=1` 重新读盘） |
 | POST | `/api/skills/sync` | 重新同步技能语料（md5 幂等；页面「重新同步」走这里） |
+| GET | `/api/skills/drafts` | 草稿区列表（`skills/_inbox/`，含来源与"是否与已有技能重复"提示） |
+| DELETE | `/api/skills/drafts/{name}` | 移除草稿 → **归档**到 `_inbox/_trash/`（不是真删，草稿不在 Git 里） |
+| POST | `/api/skills/draft-from-chat` | 把某一轮所在的**事件片段**沉淀成草稿（页面「沉淀为经验」；重复返回 200 + `duplicate`，历史错位返回 409） |
 | POST | `/api/feedback` | 提交 badcase |
 | GET | `/api/feedback?page&size` | badcase 列表 |
 | GET | `/api/context/{session_id}` | 会话历史（上下文面板用） |
@@ -237,4 +240,6 @@ context-engine-agent/
 2. **MySQL / Redis** 是配置驱动的可选外部服务，代码路径（方言、`AUTO_INCREMENT`、`ex=ttl`）已写好，但**尚未在真实 MySQL / Redis 上实测**，上线前需要实测。
 3. **前端**组件库 / 路由 / 图表是离线环境下的自研轻量实现，切换到主流方案的步骤写在 `docs/frontend.md`。
 4. **评测**的口径与阈值边界：相关性门控阈值在开发集上标定（`RELEVANCE_MIN_COVERAGE=0.35`），换语料需重新标定；留出集里的边界争议项（`现在北京时间几点？` 被判为工具+检索）如实记录在 `docs/evaluation.md`，没有为它继续调参。
-4. `npm run lint` 需要先自行安装 eslint（离线环境默认未装，见 `eslint.config.js` 头部说明）。
+5. `npm run lint` 需要先自行安装 eslint（离线环境默认未装，见 `eslint.config.js` 头部说明）。
+6. **没有鉴权体系**：接口都是本机开发用途。破坏性接口（`DELETE /api/kb/{source}`、`DELETE /api/skills/drafts/{name}`）
+   若将来部署到公网，**必须先加认证**，否则任何人都能删知识源或草稿。

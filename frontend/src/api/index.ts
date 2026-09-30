@@ -135,6 +135,36 @@ export interface SkillPayload {
   skipped: { path: string; reason: string }[]
 }
 
+//: 草稿区（skills/_inbox/）：素材，不进语料、不参与匹配
+export interface SkillDraft {
+  name: string
+  size: number
+  modified_at: string
+  //: 粗略来源：对话抽取 / 文档抽取 / 手工/其它
+  source: string
+  question: string
+  content: string
+  //: 与已有技能/草稿相似时给 [名字, 覆盖率]，否则 null
+  duplicate: [string, number] | null
+}
+
+export interface SkillDraftsPayload {
+  drafts: SkillDraft[]
+  inbox: string
+  //: 归档区（_inbox/_trash/）里的数量 —— "移除"是可后悔的
+  trash_count: number
+}
+
+export interface DraftFromChatResult {
+  created: string | null
+  duplicate: [string, number] | null
+  score: number
+  categories: number
+  start: number
+  turns: number
+  signals: { symptom: string[]; action: string[]; verify: string[] }
+}
+
 export interface KbSource {  source: string
   chunks: number
   created_at: string
@@ -217,6 +247,19 @@ export const skillSync = () =>
     `${BASE}/skills/sync`,
     jsonInit('POST', {}),
   )
+
+// 草稿区（_inbox/）：页面可以列/移除草稿、把某一轮对话沉淀成草稿；
+// 但**不写已生效的 SKILL.md** —— 那是 Git 里的真源，必须人工过审后提升。
+export const skillDrafts = () => request<SkillDraftsPayload>(`${BASE}/skills/drafts`)
+
+export const skillDraftRemove = (name: string) =>
+  request<{ archived: string; moved_to: string; trash_count: number }>(
+    `${BASE}/skills/drafts/${encodeURIComponent(name)}`,
+    { method: 'DELETE' },
+  )
+
+export const draftFromChat = (payload: { session_id: string; turn_index: number; expected_user?: string }) =>
+  request<DraftFromChatResult>(`${BASE}/skills/draft-from-chat`, jsonInit('POST', payload))
 
 export const feedbackCreate = (payload: {  session_id: string
   message: string
