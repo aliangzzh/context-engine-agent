@@ -85,6 +85,11 @@ class Health(BaseModel):
     retrieval_effective: str = ""
     #: 向量索引状态摘要：status / chunk_count / built_at / last_degrade
     vector_index: dict = Field(default_factory=dict)
+    #: 运行时环境：python 解释器路径 / 版本。
+    #: 为什么值得暴露：依赖缺失最常见的根因是"跑的不是你以为的那个解释器"，
+    #: 而 /health 只报 unavailable 时只能靠猜（这次就被坑了一轮）。
+    #: 注意：这会把本机路径暴露给调用方——面向公网时应只在 DEBUG 下返回。
+    runtime: dict = Field(default_factory=dict)
 
 
 class IngestResult(BaseModel):

@@ -84,19 +84,31 @@ def missing_deps() -> list[str]:
     return missing
 
 
+#: ``_deps()`` 最近一次失败的**具体原因**。
+#: 依赖探测必须能自证失败原因 —— 否则 /health 只有一个 "unavailable"，
+#: 到底是"顶层包没装"还是"包在、但深层导入炸了"，排查只能靠猜。
+_DEPS_ERROR = ""
+
+
 def _deps():
     """返回 ``(FAISS, DashScopeEmbeddings)``；任一缺失都返回 ``(None, None)``。
 
-    依赖是"可选"的（CI 只装 requirements.txt），所以这里必须能优雅失败。
+    依赖是"可选"的（CI 只装 requirements.txt），所以这里必须能优雅失败；
+    但**失败原因要留下来**（``_DEPS_ERROR``），由 /health 暴露出去。
     """
-    if missing_deps():
+    global _DEPS_ERROR
+    missing = missing_deps()
+    if missing:
+        _DEPS_ERROR = "missing: " + ",".join(missing)
         return None, None
     try:
         from langchain_community.embeddings import DashScopeEmbeddings
         from langchain_community.vectorstores import FAISS
 
+        _DEPS_ERROR = ""
         return FAISS, DashScopeEmbeddings
-    except Exception:  # pragma: no cover - 取决于环境是否装了可选依赖
+    except Exception as exc:  # pragma: no cover - 取决于环境是否装了可选依赖
+        _DEPS_ERROR = f"{exc.__class__.__name__}: {exc}"
         return None, None
 
 
@@ -150,6 +162,7 @@ class VectorIndex:
     def describe(self, texts=None) -> dict:
         """给人看的状态摘要（/health 用）。"""
         meta = self.read_meta()
+        missing = missing_deps()
         info = {
             "status": self.status(texts) if texts is not None else (
                 VectorStatus.UNAVAILABLE if not meta else "unknown"
@@ -160,6 +173,13 @@ class VectorIndex:
             "chunk_count": meta.get("chunk_count"),
             "built_at": meta.get("built_at"),
         }
+        # 依赖缺失时**必须自证原因**，否则 /health 只有一个 "unavailable"，
+        # 排查只能靠猜。（这条是踩坑后加的：当时 chunk_count 读得到、status 却是
+        # unavailable，已经能推出"缺依赖而非缺索引"，但没有直接证据。）
+        if missing:
+            info["missing_deps"] = missing
+        if _DEPS_ERROR:
+            info["deps_error"] = _DEPS_ERROR
         if self.last_error:
             info["last_error"] = self.last_error
         return info

@@ -6,6 +6,7 @@ per request so that each session gets its own history handle.
 """
 from __future__ import annotations
 
+import sys
 import time
 from pathlib import Path
 from typing import Iterator
@@ -77,6 +78,9 @@ class AppServices:
             retrieval_backend=config.effective_retrieval_backend(),
             retrieval_effective=effective,
             vector_index=vector_info,
+            # 解释器路径：依赖缺失时第一个要确认的就是"跑的是哪个 Python"。
+            # 排查过一次"终端里依赖齐全、服务里全缺"，就是靠这个字段定死的。
+            runtime={"python": sys.executable, "version": sys.version.split()[0]},
             model=self.model.name,
             db_backend=config.effective_db_backend(),
             cache_backend=config.effective_cache_backend(),
