@@ -75,3 +75,69 @@ cd backend && ..\.venv\Scripts\python.exe -m unittest tests.test_skills -v
   否则会出现"我明明改了它还是老行为"。
 - 删除技能时同步删索引，否则会**幽灵命中**（和向量索引那类一致性问题同源）。
 - 重要改动把 `version` +1、`updated` 改成当天。
+
+## 六、怎么跑通 / 怎么确认技能真的生效
+
+### 6.1 三条命令（不装任何依赖，先确认"库是好的"）
+
+```bash
+cd backend
+..\.venv\Scripts\python.exe -m scripts.collect_experience check    # 技能格式校验，不合规 exit 1
+..\.venv\Scripts\python.exe -m scripts.collect_experience sync     # 同步进检索语料（md5 幂等）
+..\.venv\Scripts\python.exe -m unittest tests.test_skills -v       # 加载/匹配/语料/槽位/节点
+```
+
+### 6.2 起服务看真实效果（推荐）
+
+```bash
+# 终端 1
+cd backend && ..\.venv\Scripts\python.exe run.py      # http://localhost:8000
+# 终端 2
+cd frontend && npm run dev                            # http://localhost:5173
+```
+
+打开对话页，问一句**带触发词**的开发经验问题。触发词：`经验` / `坑` / `技能库` / `教训` / `skill`。
+
+| 问法 | 期望看到 |
+|---|---|
+| 「查一下工具调用参数抽取的踩坑经验」 | Agent 面板出现 📘 **skill** 节点；上下文面板出现「**技能（开发经验）**」槽（prio=70，约 846 token）；回答里就是那条技能的规则与反例 |
+| 「加绒牛仔怎么洗」 | **没有** skill 槽（技能库不截胡业务问答，这是精准门在起作用） |
+
+### 6.3 只看接口（不开前端）
+
+```powershell
+$body = '{"message":"接口字段前后端对不上有经验吗","stream":false}'
+Invoke-RestMethod http://127.0.0.1:8000/api/chat -Method Post -ContentType 'application/json' -Body $body
+# 看 data.skills / data.context.slots（kind=skill）/ data.agent_trace
+```
+
+### 6.4 量化证据（A/B：带技能 vs 不带技能）
+
+```bash
+python -m eval.run --dataset dataset_skill.json --skills both
+```
+
+### 6.5 给外部编码 Agent 用（MCP）
+
+`search_skill` 已经在 MCP 工具清单里（`mcp_server.py` 直接复用 `TOOLS` 注册表）：
+
+```bash
+cd backend && python mcp_server.py     # JSON-RPC 2.0 over stdio
+# 配进 Cursor / Claude Code / DSH 的 MCP 配置，外部 Agent 就能直接查这个经验库
+```
+
+### 6.6 自己产一条技能（归档链路）
+
+```bash
+python -m scripts.collect_experience draft     # docs/ → skills/_inbox/*.md 草稿（半成品，需人工补全）
+# 补全 TODO、删掉草稿注释后，移到 skills/<kebab-case>/SKILL.md
+python -m scripts.collect_experience check
+python -m scripts.collect_experience sync
+```
+
+### 6.7 看不到效果时的三个排查点
+
+1. **问句里没有触发词** → 路由不会走技能节点（刻意的精准门：宁可漏、不要错）。补一句"有经验吗 / 踩过坑吗"。
+2. **`/health` 里 `model` 是 `fake`** → 离线回放模式，回答带 `【离线演示】` 前缀，只能证明"技能进了上下文"；接了真模型才看得到"按经验作答"。
+3. **改了技能文件没生效** → 跑一次 `sync`（索引不会自己发现文件变了）。日志里的
+   `retrieval.degraded reason=stale` 是**业务知识库**的向量索引过期后的正常降级，与技能库无关。
