@@ -18,8 +18,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .. import config
+from ..context.rerank import is_relevant
 from ..retrieval.retriever import Retriever
 from .loader import Skill
+from .matcher import search_skills
 
 _lock = threading.Lock()
 _retriever: Retriever | None = None
@@ -160,6 +162,29 @@ def search_skill_corpus(query: str, k: int | None = None) -> list:
     if not retriever.texts:
         return []
     return retriever.search(query, k=k or config.SKILL_TOP_K)
+
+
+def select_skills(query: str, skills: list[Skill], *, top_k: int | None = None):
+    """一次调用完成「精准门 + 语料检索」，返回 ``(matches, chunks)``。
+
+    顺序固定在这一处（工具 / Agent 节点 / 接口共用），否则各处行为会漂移：
+
+    1. **精准门**：关键词命中才考虑 —— 漏命中只是退化成"没有技能库"，误命中会把 Agent 带偏；
+    2. **语料检索**：在独立技能语料上排序、取正文（BM25 / 向量由配置决定）；
+    3. **相关性门控**：与业务知识库共用同一套 ``is_relevant``，宁可漏、不要错。
+    """
+    k = top_k or config.SKILL_TOP_K
+    matches = search_skills(query, skills, top_k=k)
+    allowed = {m.skill.name for m in matches}
+    if not allowed:
+        return matches, []
+    ensure_synced(skills)
+    chunks = [
+        c
+        for c in search_skill_corpus(query, k=max(k, len(allowed)))
+        if is_relevant(query, c.text) and str(c.source).replace("skill:", "") in allowed
+    ]
+    return matches, chunks
 
 
 def corpus_status(skills: list[Skill] | None = None) -> dict:

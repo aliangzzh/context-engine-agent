@@ -11,6 +11,7 @@ const kindIcon: Record<string, string> = {
   router: '🔀',
   retrieve: '📚',
   tool: '🔧',
+  skill: '📘',
   writer: '✍️',
   direct: '➡️',
 }

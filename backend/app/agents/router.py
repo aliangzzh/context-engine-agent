@@ -53,7 +53,7 @@ def route(user_input: str, kb_relevant: bool = False) -> list[str]:
     if any(k in text for k in _TIME):
         steps.append("tool:current_time")
     if any(k in text for k in _SKILL_KEYWORDS):
-        steps.append("tool:search_skill")
+        steps.append("skill")
 
     wants_kb = any(k in text for k in _KB_KEYWORDS) or kb_relevant
     if not steps:

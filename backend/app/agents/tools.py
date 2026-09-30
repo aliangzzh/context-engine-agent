@@ -21,9 +21,8 @@ from typing import Callable
 import requests
 
 from .. import config
-from ..context.rerank import is_relevant
 from ..decorators import retry, timed
-from ..skills import ensure_synced, get_skills, search_skill_corpus, search_skills
+from ..skills import get_skills, select_skills
 
 TIMEOUT = 8
 
@@ -152,27 +151,17 @@ def search_skill(query: str) -> str:
     if not loaded.skills:
         return "技能库是空的（skills/ 目录下还没有技能）"
 
-    # ① **精准门**：先用关键词判定"该不该用这条经验"。
-    #    技能库的失效代价不对称 —— 漏命中只是退化成没有技能库，误命中会把 Agent 带偏，
-    #    所以门控刻意收紧（实测：放宽到只按相关性放行时，问"今天天气"会命中工具参数技能）。
-    matches = search_skills(query, loaded.skills, top_k=config.SKILL_TOP_K)
-    allowed = {m.skill.name for m in matches}
-
-    # ② 召回与排序：在**独立技能语料**上检索（BM25 / 向量），只保留过了精准门的技能
-    ensure_synced(loaded.skills)
-    hits = [
-        c
-        for c in search_skill_corpus(query, k=max(config.SKILL_TOP_K, len(allowed) or 1))
-        if is_relevant(query, c.text) and str(c.source).replace("skill:", "") in allowed
-    ]
-    if hits:
+    # 选技能的顺序固定在 skills/store.select_skills 里（精准门 → 语料检索 → 相关性门控），
+    # 工具与 Agent 的 skill 节点共用同一套判断，避免两边行为漂移。
+    matches, chunks = select_skills(query, loaded.skills)
+    if chunks:
         return "\n\n".join(
             f"【技能 {str(c.source).replace('skill:', '')}】相关度 {c.score}"
             f"｜来源：{(c.meta or {}).get('path', '')}\n{c.text}"
-            for c in hits
+            for c in chunks
         )
 
-    # ③ 语料没命中（首次 clone 还没同步 / 门控太严）→ 退回关键词匹配的正文
+    # 语料还没同步出来（首次 clone）/ 门控太严时，退回关键词匹配的正文
     if matches:
         return "\n\n".join(
             f"【技能 {m.skill.name}】命中：{'、'.join(m.hits)}｜来源：{m.skill.path}\n"
@@ -180,7 +169,7 @@ def search_skill(query: str) -> str:
             for m in matches
         )
 
-    # ④ 没有就如实说没有（不硬凑一条），顺带提示有文件被跳过 —— 写错的技能要能被发现
+    # 没有就如实说没有（不硬凑一条），顺带提示有文件被跳过 —— 写错的技能要能被发现
     hint = f"（另有 {len(loaded.skipped)} 个技能文件格式有问题被跳过）" if loaded.skipped else ""
     return f"技能库中没有与「{query}」相关的经验{hint}"
 

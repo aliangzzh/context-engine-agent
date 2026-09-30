@@ -23,6 +23,7 @@ from ..models import get_model_backend
 from ..retrieval.knowledge import KnowledgeBase
 from ..retrieval.retriever import get_retriever
 from ..schemas import ChatReply, ChatRequest, Health, IngestResult
+from ..skills import corpus_status, get_skills
 from ..storage.repo import FeedbackRepository, KbRepository
 
 logger = get_logger("app.services")
@@ -109,6 +110,7 @@ class AppServices:
             context=res.context,
             agent_trace=res.trace.to_list(),
             used_tools=res.used_tools,
+            skills=res.skills,
             backend=self.model.name,
             tokens_requested=res.context.total_tokens,
             tokens_generated=len(res.answer),
@@ -166,9 +168,10 @@ class AppServices:
 
     # -- 看板 -------------------------------------------------------------------------
     def stats(self) -> dict:
-        """看板数据：知识库规模 + badcase 分布 + 最近请求的 token/耗时序列。"""
+        """看板数据：知识库规模 + badcase 分布 + 最近请求的 token/耗时序列 + 技能库。"""
         return {
             "kb": dict(self.kb_repo.stats(), chunk_lengths=self.kb_repo.chunk_length_histogram()),
+            "skills": corpus_status(get_skills().skills),
             "feedback": {
                 "total": self.feedback_repo.list(page=1, size=1)["total"],
                 "distribution": self.feedback_repo.distribution(),

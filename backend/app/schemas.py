@@ -38,7 +38,7 @@ class HistoryTurn(BaseModel):
 class ContextSlot(BaseModel):
     """One allocated slice of the context window with its priority."""
 
-    kind: Literal["system", "summary", "retrieval", "history", "tool"]
+    kind: Literal["system", "summary", "retrieval", "history", "tool", "skill"]
     content: str
     priority: int = Field(default=0, description="Higher wins when trimming")
     tokens: int = 0
@@ -67,6 +67,8 @@ class ChatReply(BaseModel):
     context: Context
     agent_trace: list[dict[str, Any]] = Field(default_factory=list)
     used_tools: list[str] = Field(default_factory=list)
+    #: 命中的开发经验技能（name/hits/score/path）—— 前端与评测都读它
+    skills: list[dict[str, Any]] = Field(default_factory=list)
     backend: str = "fake"
     tokens_requested: int = 0
     tokens_generated: int = 0

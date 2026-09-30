@@ -14,8 +14,15 @@ sys.path.insert(0, str(Path(__file__).parents[1]))
 os.environ.setdefault("LOG_LEVEL", "CRITICAL")
 
 from app import config
+from app.agents.orchestrator import AgentOrchestrator
+from app.agents.router import route
 from app.agents.tools import TOOLS, extract_args, get_tool
+from app.context.engine import ContextEngine
+from app.context.history import ChatStore, HistoryManager
+from app.context.rerank import Reranker
+from app.models.fake import FakeModel
 from app.retrieval.retriever import Retriever
+from app.schemas import RetrievedChunk
 from app.skills import (
     get_skill_retriever,
     get_skills,
@@ -235,6 +242,61 @@ class SkillCorpusTest(_OfflineSkillCorpus):
         self.assertIn("tool-arg-extraction", summary["removed"])
         hits = search_skill_corpus("工具参数抽取", k=5)
         self.assertNotIn("skill:tool-arg-extraction", [str(h.source) for h in hits])
+
+
+class SkillContextTest(_OfflineSkillCorpus):
+    """技能进上下文：槽位 / 渲染 / 预算 / 编排器的 skill 节点。"""
+
+    def _chunk(self, text: str = "规则：抽不到参数就向用户追问", name: str = "tool-arg-extraction"):
+        return RetrievedChunk(text=text, source=f"skill:{name}", score=1.0)
+
+    def test_skill_slot_is_rendered_into_prompt(self):
+        eng = ContextEngine(4096, reranker=Reranker())
+        ctx = eng.build(
+            user_input="q", retrieved=[], history=[], system_prompt="S", skills=[self._chunk()]
+        )
+        slot = next((s for s in ctx.slots if s.kind == "skill"), None)
+        self.assertIsNotNone(slot, "技能应作为独立槽位进入上下文")
+        self.assertEqual(slot.priority, 70)          # 高于 tool(60)，低于 system(100)
+        # 这条断言防的是"槽位建了、render_messages 却没写分支"的静默丢弃
+        messages = eng.render_messages(ctx, "q")
+        self.assertIn("抽不到参数就向用户追问", messages[0]["content"])
+
+    def test_skill_slot_is_trimmed_under_tight_budget(self):
+        eng = ContextEngine(2, reranker=Reranker())
+        ctx = eng.build(
+            user_input="q", retrieved=[], history=[], system_prompt="S",
+            skills=[self._chunk(text="技" * 500)],
+        )
+        kinds = [s.kind for s in ctx.slots]
+        self.assertIn("system", kinds)        # system 受保护
+        self.assertNotIn("skill", kinds)      # 技能可裁
+        self.assertGreater(ctx.trimmed, 0)    # 裁了多少如实上报，不静默
+
+    def test_router_emits_skill_step_only_on_skill_keywords(self):
+        self.assertIn("skill", route("查一下工具参数抽取的经验"))
+        self.assertNotIn("skill", route("你好"))
+
+    def _orchestrator(self, **kwargs):
+        d = _scratch_dir()
+        r = Retriever(backend="bm25", kb_path=d / "kb.json")
+        hm = HistoryManager(ChatStore(d / "hist"), "s1", max_turns=4)
+        return AgentOrchestrator(r, FakeModel(), hm, ContextEngine(2000, reranker=Reranker()), **kwargs)
+
+    def test_orchestrator_injects_skill_and_traces_it(self):
+        res = self._orchestrator().generate("查一下工具调用参数抽取的踩坑经验", "s1")
+        kinds = [s["kind"] for s in res.trace.to_list()]
+        self.assertIn("skill", kinds)
+        self.assertIn("tool-arg-extraction", [s["name"] for s in res.skills])
+        self.assertIn("skill", [s.kind for s in res.context.slots])
+        self.assertIn("参数", res.messages[0]["content"])
+
+    def test_orchestrator_can_disable_skills_for_ab_comparison(self):
+        res = self._orchestrator(skills=False).generate("查一下工具调用参数抽取的踩坑经验", "s1")
+        kinds = [s["kind"] for s in res.trace.to_list()]
+        self.assertIn("skill", kinds)                    # 节点仍在（trace 可解释）
+        self.assertEqual(res.skills, [])                 # 但什么都没注入
+        self.assertNotIn("skill", [s.kind for s in res.context.slots])
 
 
 class CollectExperienceTest(unittest.TestCase):

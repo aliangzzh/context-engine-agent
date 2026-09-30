@@ -332,7 +332,24 @@ cd F:\shujuf\code\context-engine-agent\backend
    真命中 0.0328 vs 误命中 0.0161）。最终实现是 **关键词精准门 → 语料检索排序/取正文**
    （`search_skill` 的 ①→② 顺序）。**是否放宽留给阶段 4 用评测数据决定**，不凭感觉调。
 
-**有意推迟的**
+### 阶段 3
+
+- `ContextSlot.kind` 增加 `"skill"`；`ContextEngine.build(skills=...)` 建**技能槽**
+  （priority **70**：高于 tool=60，低于 system=100，且**不进** PROTECTED_KINDS），
+  `render_messages` 补上 `skill` 分支（防"槽位建了却不进 prompt"的静默丢弃）
+- 编排器新增 `skill` 节点：判定顺序**固定在一处** `skills/store.select_skills`
+  （精准门 → 语料检索 → 相关性门控），工具与节点共用，避免两边行为漂移；
+  trace 记录命中词、分数、来源文件、被跳过的技能文件
+- `AgentOrchestrator(..., skills=...)` 可整体关掉技能（`None` 跟随配置）——
+  给阶段 4 的 A/B 对照用，**评测不需要改全局配置**
+- `ChatReply` 与 SSE 的 `done` 事件增加 `skills` 字段；`/api/stats` 暴露技能库规模；
+  前端上下文面板加 `技能（开发经验）` 标签与配色、Agent 面板加 `📘` 图标
+- 验收：**141 个测试全绿**、评测门九项 `1.0000`、`vue-tsc` 通过；
+  手动验收：trace 有 `skill` 节点（命中 1 条 / 注入 1 条）、上下文槽位 `['system','skill']`
+  （技能槽 846 token）、技能正文确实出现在 system 消息里（"抽不出来" / `extract_args` / "反例" 均在）、
+  `skills=False` 时槽位只剩 `['system']` 且命中为空
+
+**未做（有意推迟的）**
 
 - `skill_meta` 表（技能元数据 + 命中次数）：检索路径用不到它，等做前端技能页 / 看板时再加，
   免得为统计去动 `db.py` 里**两份**建表语句（SQLite + MySQL）。

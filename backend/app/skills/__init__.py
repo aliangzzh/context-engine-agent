@@ -18,6 +18,7 @@ from .store import (
     needs_sync,
     reset_skill_retriever,
     search_skill_corpus,
+    select_skills,
     skill_md5,
     skill_text,
     sync_skills,
@@ -28,7 +29,7 @@ __all__ = [
     "corpus_status", "ensure_synced", "get_skill_retriever", "get_skills",
     "load_skills", "needs_sync", "parse_skill", "reset_skill_retriever",
     "reset_skills", "score_skill", "search_skill_corpus", "search_skills",
-    "skill_md5", "skill_text", "sync_skills",
+    "select_skills", "skill_md5", "skill_text", "sync_skills",
 ]
 
 _lock = threading.Lock()
