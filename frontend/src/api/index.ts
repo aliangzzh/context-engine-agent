@@ -105,8 +105,37 @@ export interface Health {
   cache_backend: string
 }
 
-export interface KbSource {
-  source: string
+export interface SkillItem {
+  name: string
+  description: string
+  body: string
+  tags: string[]
+  trigger: string[]
+  stack: string[]
+  status: string
+  version: string
+  updated: string
+  path: string
+  active: boolean
+}
+
+export interface SkillStats {
+  chunks: number
+  backend: string
+  kb_path: string
+  manifest_count: number
+  //: 语料与 skills/ 里的文件是否一致（true = 需要点"重新同步"）
+  needs_sync?: boolean
+  loaded?: number
+}
+
+export interface SkillPayload {
+  stats: SkillStats
+  skills: SkillItem[]
+  skipped: { path: string; reason: string }[]
+}
+
+export interface KbSource {  source: string
   chunks: number
   created_at: string
 }
@@ -179,8 +208,17 @@ export async function kbUpload(file: File): Promise<IngestResult> {
   return request<IngestResult>(`${BASE}/kb/upload`, { method: 'POST', body: form })
 }
 
-export const feedbackCreate = (payload: {
-  session_id: string
+// 技能库（开发经验）：只读列表 + 语料同步。正文的真源是仓库里的 SKILL.md，页面不写回。
+export const skillList = (reload = false) =>
+  request<SkillPayload>(`${BASE}/skills${reload ? '?reload=1' : ''}`)
+
+export const skillSync = () =>
+  request<SkillPayload & { summary: { changed: string[]; removed: string[]; chunks: number; rebuilt: boolean } }>(
+    `${BASE}/skills/sync`,
+    jsonInit('POST', {}),
+  )
+
+export const feedbackCreate = (payload: {  session_id: string
   message: string
   answer: string
   reason: string

@@ -102,6 +102,17 @@ def handle_kb_delete(source: str) -> tuple[int, dict]:
     return 200, ok(result)
 
 
+def handle_skill_list(query: dict) -> tuple[int, dict]:
+    """技能库列表（含语料状态与格式错误的文件）。``reload=1`` 时重新读盘。"""
+    reload = str(query.get("reload", "")).lower() in ("1", "true", "yes")
+    return 200, ok(services().skills(reload=reload))
+
+
+def handle_skill_sync(payload: dict) -> tuple[int, dict]:
+    """重新同步技能语料（md5 幂等；页面上"重新同步"按钮走这里）。"""
+    return 200, ok(services().sync_skills())
+
+
 def handle_feedback(payload: dict) -> tuple[int, dict]:
     req = FeedbackRequest(**payload)
     row = services().add_feedback(req.session_id, req.message, req.answer, req.reason, req.note)
@@ -152,6 +163,7 @@ __all__ = [
     "Any", "AppError", "ChatReply", "Health", "IngestResult",
     "begin_request", "handle_chat", "handle_chat_plan", "handle_chat_stream",
     "handle_context", "handle_feedback", "handle_feedback_list", "handle_health",
-    "handle_ingest", "handle_kb_delete", "handle_kb_list", "handle_stats",
+    "handle_ingest", "handle_kb_delete", "handle_kb_list", "handle_skill_list",
+    "handle_skill_sync", "handle_stats",
     "handle_upload", "reset_services", "safe_call", "services",
 ]

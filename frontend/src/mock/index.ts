@@ -8,7 +8,7 @@
 // 打开后，页面照常调用 api 层，但数据来自这里的假数据 —— 组件、分页、校验、
 // 图表渲染路径全部走通，等后端接口 ready 只需要把开关关掉。
 import { ref } from 'vue'
-import type { FeedbackItem, KbSource, PageResult, StatsPayload } from '../api'
+import type { FeedbackItem, KbSource, PageResult, SkillItem, SkillPayload, StatsPayload } from '../api'
 
 const KEY = 'useMock'
 
@@ -44,8 +44,51 @@ export function mockKbList(page = 1, size = 10, q = ''): PageResult<KbSource> {
   return paginate(filtered, page, size)
 }
 
-export function mockFeedbackList(page = 1, size = 10): PageResult<FeedbackItem> {
-  const reasons = ['answer_wrong', 'hallucination', 'missing_kb', 'too_slow', 'other']
+const MOCK_SKILLS: SkillItem[] = [
+  {
+    name: 'tool-arg-extraction',
+    description: '工具调用必须从自然语言里抽取参数，禁止把整句用户输入当参数；抽不到就追问。',
+    body: '## 规则\n1. 每个参数都要由抽取器产出，不要把整句用户输入塞进第一个参数。\n2. 抽不出来就返回追问。\n\n## 反例\n- 现象：未找到城市「北京今天天气怎么样」\n- 根因：把整句用户输入当参数\n- 修复：extract_args()\n- 验证：backend/tests/test_core.py',
+    tags: ['tool-calling', 'agent'],
+    trigger: ['工具调用', '参数', '抽参'],
+    stack: ['python'],
+    status: 'active',
+    version: '1',
+    updated: '2026-09-30',
+    path: 'skills/tool-arg-extraction/SKILL.md',
+    active: true,
+  },
+  {
+    name: 'silent-exception-swallow',
+    description: '异常必须可观测（状态码/错误码/日志/降级标记），不要用 except Exception: return {} 吞掉。',
+    body: '## 规则\n1. 坏请求 → 显式 400 + 业务错误码。\n2. 降级/超限 → 如实上报（over_budget / last_degrade）。\n\n## 反例\n- 现象：非法参数请求"成功"返回，前端一片空白\n- 验证：backend/tests/test_api.py',
+    tags: ['error-handling', 'observability'],
+    trigger: ['异常', '错误处理', '降级'],
+    stack: ['python'],
+    status: 'active',
+    version: '1',
+    updated: '2026-09-30',
+    path: 'skills/silent-exception-swallow/SKILL.md',
+    active: true,
+  },
+]
+
+export function mockSkillList(): SkillPayload {
+  return {
+    stats: {
+      chunks: MOCK_SKILLS.length,
+      backend: 'bm25',
+      kb_path: 'backend/data/skills/kb.json',
+      manifest_count: MOCK_SKILLS.length,
+      needs_sync: false,
+      loaded: MOCK_SKILLS.length,
+    },
+    skills: MOCK_SKILLS,
+    skipped: [],
+  }
+}
+
+export function mockFeedbackList(page = 1, size = 10): PageResult<FeedbackItem> {  const reasons = ['answer_wrong', 'hallucination', 'missing_kb', 'too_slow', 'other']
   const items: FeedbackItem[] = Array.from({ length: 17 }, (_, i) => ({
     id: 100 - i,
     session_id: `mock-${i % 3}`,

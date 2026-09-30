@@ -24,7 +24,8 @@ from app import config
 from app.api import (
     begin_request, handle_chat, handle_chat_plan, handle_chat_stream,
     handle_context, handle_feedback, handle_feedback_list, handle_health,
-    handle_ingest, handle_kb_delete, handle_kb_list, handle_stats, handle_upload,
+    handle_ingest, handle_kb_delete, handle_kb_list, handle_skill_list,
+    handle_skill_sync, handle_stats, handle_upload,
     safe_call,
 )
 from app.errors import ErrorCode, error_from_exception, fail
@@ -184,6 +185,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/kb/list":
                 status, body = safe_call(handle_kb_list, self._query())
                 return self._send_json(status, body)
+            if path == "/api/skills":
+                status, body = safe_call(handle_skill_list, self._query())
+                return self._send_json(status, body)
             if path == "/api/feedback":
                 status, body = safe_call(handle_feedback_list, self._query())
                 return self._send_json(status, body)
@@ -240,6 +244,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json(status, body)
             if path == "/api/kb/ingest":
                 status, body = safe_call(handle_ingest, payload)
+                return self._send_json(status, body)
+            if path == "/api/skills/sync":
+                status, body = safe_call(handle_skill_sync, payload)
                 return self._send_json(status, body)
             if path == "/api/feedback":
                 status, body = safe_call(handle_feedback, payload)

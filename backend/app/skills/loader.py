@@ -61,6 +61,22 @@ class Skill:
             text = text[: limit - 1] + "…"
         return f"{self.name}：{text}"
 
+    def as_dict(self) -> dict:
+        """给 API / 前端用的序列化（正文一并给出：这个页面的用途就是让人看清规则）。"""
+        return {
+            "name": self.name,
+            "description": self.description,
+            "body": self.body,
+            "tags": self.tags,
+            "trigger": self.trigger,
+            "stack": self.stack,
+            "status": self.status,
+            "version": self.version,
+            "updated": self.updated,
+            "path": self.path,
+            "active": self.active,
+        }
+
 
 @dataclass
 class LoadResult:

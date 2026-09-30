@@ -178,6 +178,19 @@ async def kb_delete(source: str) -> dict:
     return JSONResponse(status_code=status, content=body)
 
 
+# --- skills（开发经验技能库）--------------------------------------------------------
+@app.get("/api/skills", tags=["skills"], summary="技能库列表（含语料状态与格式错误的文件）")
+async def skill_list(reload: int = 0) -> dict:
+    status, body = await run_in_threadpool(api.handle_skill_list, {"reload": reload})
+    return JSONResponse(status_code=status, content=body)
+
+
+@app.post("/api/skills/sync", tags=["skills"], summary="重新同步技能语料（md5 幂等）")
+async def skill_sync(payload: dict | None = None) -> dict:
+    status, body = await run_in_threadpool(api.handle_skill_sync, payload or {})
+    return JSONResponse(status_code=status, content=body)
+
+
 # --- feedback ---------------------------------------------------------------------
 @app.post("/api/feedback", tags=["feedback"], summary="提交 badcase 反馈")
 async def feedback(payload: FeedbackRequest) -> dict:

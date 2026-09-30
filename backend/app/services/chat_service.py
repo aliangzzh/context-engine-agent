@@ -23,7 +23,7 @@ from ..models import degrade_reason, get_model_backend
 from ..retrieval.knowledge import KnowledgeBase
 from ..retrieval.retriever import get_retriever
 from ..schemas import ChatReply, ChatRequest, Health, IngestResult
-from ..skills import corpus_status, get_skills
+from ..skills import corpus_status, ensure_synced, get_skills
 from ..storage.repo import FeedbackRepository, KbRepository
 
 logger = get_logger("app.services")
@@ -160,6 +160,26 @@ class AppServices:
 
     def kb_delete(self, source: str) -> dict:
         return self.kb().delete_source(source)
+
+    # -- 技能库（开发经验）--------------------------------------------------------------
+    def skills(self, reload: bool = False) -> dict:
+        """技能列表 + 语料状态 + **被跳过的（格式有问题的）文件**。
+
+        为什么要把 skipped 一起返回：技能是人手写的文件，写错是常态。
+        只在命令行 check 里提示的话，页面上就看不出"我那条技能为什么没生效"。
+        """
+        loaded = get_skills(reload=reload)
+        return {
+            "stats": corpus_status(loaded.skills),
+            "skills": [s.as_dict() for s in loaded.skills],
+            "skipped": loaded.skipped,
+        }
+
+    def sync_skills(self) -> dict:
+        """重新同步技能语料（页面上那个"重新同步"按钮）。"""
+        loaded = get_skills(reload=True)
+        summary = ensure_synced(loaded.skills, force=True)
+        return {"summary": summary, **self.skills()}
 
     # -- badcase 反馈 ------------------------------------------------------------------
     def add_feedback(self, session_id: str, message: str, answer: str, reason: str, note: str = "") -> dict:

@@ -18,6 +18,7 @@ export interface RouteRecord {
 export const routes: RouteRecord[] = [
   { path: '/', name: 'chat', title: '对话', component: () => import('../views/ChatView.vue') },
   { path: '/kb', name: 'kb', title: '知识库', component: () => import('../views/KnowledgeView.vue') },
+  { path: '/skills', name: 'skills', title: '技能', component: () => import('../views/SkillsView.vue') },
   { path: '/dashboard', name: 'dashboard', title: '看板', component: () => import('../views/DashboardView.vue') },
 ]
 

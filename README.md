@@ -66,7 +66,7 @@ npm install
 npm run dev              # http://localhost:5173
 ```
 
-页面：`#/` 对话 · `#/kb` 知识库管理 · `#/dashboard` 运行看板。
+页面：`#/` 对话 · `#/kb` 知识库管理 · `#/skills` 技能库 · `#/dashboard` 运行看板。
 接口没就绪时可以打开右上角 **Mock 数据** 开关，用假数据把页面流程跑通。
 
 ### 3. 微调（可选，需 GPU）
@@ -145,6 +145,8 @@ docker compose up --build
 | POST | `/api/kb/upload` | **文件上传入库**（multipart/form-data，自研解析，免 `python-multipart`） |
 | GET | `/api/kb/list?page&size&q` | 知识库列表（SQL 分页 + 搜索） |
 | DELETE | `/api/kb/{source}` | 按来源删除（同时清检索索引与 md5 指纹） |
+| GET | `/api/skills` | 技能库列表（含语料状态与格式有问题的文件；`?reload=1` 重新读盘） |
+| POST | `/api/skills/sync` | 重新同步技能语料（md5 幂等；页面「重新同步」走这里） |
 | POST | `/api/feedback` | 提交 badcase |
 | GET | `/api/feedback?page&size` | badcase 列表 |
 | GET | `/api/context/{session_id}` | 会话历史（上下文面板用） |

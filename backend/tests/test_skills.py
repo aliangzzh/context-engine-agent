@@ -299,6 +299,30 @@ class SkillContextTest(_OfflineSkillCorpus):
         self.assertNotIn("skill", [s.kind for s in res.context.slots])
 
 
+class SkillApiTest(_OfflineSkillCorpus):
+    """接口层形状：/api/skills 与 /api/skills/sync（前端技能页依赖它）。"""
+
+    def test_list_handler_shape(self):
+        from app import api
+
+        status, body = api.handle_skill_list({})
+        self.assertEqual(status, 200)
+        data = body["data"]
+        self.assertTrue(data["skills"], "接口要返回技能列表")
+        self.assertEqual(data["skipped"], [])
+        self.assertIn("chunks", data["stats"])
+        for key in ("name", "description", "body", "trigger", "version", "path", "active"):
+            self.assertIn(key, data["skills"][0])
+
+    def test_sync_handler_reports_summary(self):
+        from app import api
+
+        status, body = api.handle_skill_sync({})
+        self.assertEqual(status, 200)
+        self.assertIn("rebuilt", body["data"]["summary"])
+        self.assertTrue(body["data"]["skills"])
+
+
 class CollectExperienceTest(unittest.TestCase):
     """归档脚本：真文档要能抽出条目（否则"自动归档"是假的）。"""
 
