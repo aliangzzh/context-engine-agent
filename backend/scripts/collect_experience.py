@@ -423,8 +423,10 @@ def cmd_from_chat(args: argparse.Namespace) -> int:
             print(f"  跳过（重复 {dup[0]} 相似 {dup[1]}）：{item['first_question'][:30]}")
             skipped_dup += 1
             continue
-        title = _BAD_NAME_CHARS.sub("-", item["first_question"])[:40].strip(" -") or "对话片段"
-        out = _inbox() / f"chat-{item['session'][:14]}-{item['start']}-{title}.md"
+        slug = _BAD_NAME_CHARS.sub("-", item["first_question"])[:40].strip(" -") or "对话片段"
+        out = _inbox() / f"chat-{item['session'][:14]}-{item['start']}-{slug}.md"
+        # 文件名要短，但 H1 是给人读的 —— 别把问题截断成"…结果每"
+        heading = item["first_question"] or "对话片段"
         out.write_text(
             CHAT_DRAFT_TEMPLATE.format(
                 session=item["session"],
@@ -435,7 +437,7 @@ def cmd_from_chat(args: argparse.Namespace) -> int:
                 verify=item["verify"],
                 score=item["score"],
                 categories=item["categories"],
-                title=title,
+                title=heading,
                 questions=scrub("\n".join(f"- {q}" for q in item["questions"] if q.strip())),
                 answer=scrub(item["answer"][:EXCERPT_LIMIT]),
             ),
