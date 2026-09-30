@@ -93,6 +93,11 @@ MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(2 * 1024 * 1024)))
 SKILL_ENABLED = os.getenv("SKILL_ENABLED", "1").lower() in ("1", "true", "yes")
 SKILL_DIR = Path(os.getenv("SKILL_DIR", str(PROJECT_DIR / "skills")))
 SKILL_TOP_K = int(os.getenv("SKILL_TOP_K", "2"))
+#: 技能槽在上下文预算里的优先级（越高越难被裁）。
+#: 为什么高于检索：rerank 给检索槽的优先级最高到 110（10 + rel*100），而技能是
+#: **行为约束**（怎么做），检索是**参考资料**（依据什么）—— 规则丢了模型可能答错方向，
+#: 资料丢了只是少一个引用。system 槽由 PROTECTED_KINDS 兜底（永不裁），不靠这个值竞争。
+SKILL_SLOT_PRIORITY = int(os.getenv("SKILL_SLOT_PRIORITY", "115"))
 #: 技能语料（派生数据，进 .gitignore）：与业务知识库**物理隔离**
 SKILL_KB_PATH = Path(os.getenv("SKILL_KB_PATH", str(DATA_DIR / "skills" / "kb.json")))
 #: 技能向量索引：既换名字也换目录。只换名字不够——index_meta.json 按目录放，

@@ -69,12 +69,15 @@ class ContextEngine:
             # 理由：摘要是压缩过的，单位 token 的信息密度比未压缩的历史更高。
             slots.append(self._slot("summary", f"（对话摘要：{summary_text}）", priority=30))
 
-        # 技能（开发经验）槽：优先级 70 —— 高于 tool(60)/summary(30)/history(25)、低于 system(100)。
-        # 理由：技能讲的是"怎么做事"，和 system 同类，所以比事实类槽位更该活到最后；
-        # 但它**不**进 PROTECTED_KINDS：真被裁掉时由 over_budget / trimmed 如实上报，不静默。
+        # 技能（开发经验）槽：优先级默认 115 —— **高于检索**（rerank 给检索的最高 110），
+        # 低于它被裁的顺序：tool(60) / summary(30) / history(25) / retrieval(≤110) 先走。
+        # 理由：技能讲的是"怎么做事"，是行为约束；检索只是"依据什么"。规则丢了模型可能
+        # 答错方向，资料丢了只是少一个引用。system 槽另有 PROTECTED_KINDS 兜底，不参与竞争。
+        # 它**不**进 PROTECTED_KINDS：真被裁掉时由 over_budget / trimmed 如实上报，不静默。
         for chunk in skills or []:
             name = str(chunk.source).replace("skill:", "") or "技能"
-            slots.append(self._slot("skill", f"【技能：{name}】\n{chunk.text}", priority=70))
+            slots.append(self._slot("skill", f"【技能：{name}】\n{chunk.text}",
+                                    priority=config.SKILL_SLOT_PRIORITY))
 
         if tool_results:
             slots.append(self._slot("tool", "工具返回结果：\n" + self._render_tool_results(tool_results), priority=60))

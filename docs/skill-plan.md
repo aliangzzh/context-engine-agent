@@ -97,7 +97,7 @@
 |---|---|---|
 | 1 | **独立技能语料**：`skills/` 为 source of truth，切分后进 `data/skills/kb.json` + 独立向量索引（`SKILL_INDEX_NAME=skills`）；缓存 key 加 namespace | 修坑 ①②③（串味 / 挤 top-k / 恒 STALE） |
 | 2 | **归档脚本** `scripts/collect_experience.py`：从 `docs/ai-assisted.md` §3 的**四类真实问题** + `docs/code-review.md` + `git log` 抽成「现象 / 根因 / 修复 / 验证」四段式，MD5 幂等 | "自动归档"落地，且**第一批数据是真的、不是编的** |
-| 3 | **Context Engine 的 skill 槽**：`kind="skill"`、priority=70、`render_messages` 加分支 | 技能真正进 prompt（不踩"静默丢弃"那个坑） |
+| 3 | **Context Engine 的 skill 槽**：`kind="skill"`、priority=**115（高于检索，见 §十）**、`render_messages` 加分支 | 技能真正进 prompt（不踩"静默丢弃"那个坑） |
 | 4 | **matcher + trace**：关键词/tag 命中 + 复用 `context/rerank.is_relevant` 做覆盖率门控（防乱触发）；trace 写"为什么加载这个技能" | 触发可解释、可调试；面经里最值钱的一段 |
 | 5 | **评测新类别**：`dataset_skill.json` 8~12 题，量**技能命中率**与**约束进上下文比例**，并做 `--skills on/off` 对照 | 有数字可讲，且口径诚实（离线只测"进没进上下文"） |
 
@@ -255,7 +255,7 @@ cd F:\shujuf\code\context-engine-agent\backend
 | **必须是真踩过的** | 编出来的技能会在追问"这个坑当时怎么发现的"时崩 | 每条都带「现象 / 根因 / 修复 / 验证」，验证指向**真实存在的测试或文件** |
 | **front-matter 要容错** | 技能是人手写的，总会写错字段 | 缺字段**不崩**，给明确跳过原因（§5 第 1 条测试） |
 | **触发要能"不命中"** | 关键词匹配最容易乱触发（问天气也命中技能） | 复用 `context/rerank.is_relevant` 做覆盖率门控，并写**正反例**测试（§5 第 2 条） |
-| **别把技能塞进 PROTECTED_KINDS** | 技能正文长了会挤掉参考资料 | 默认按 priority=70 参与裁剪；要"永不裁"必须显式配置并知道代价 |
+| **别把技能塞进 PROTECTED_KINDS** | 技能正文长了会挤掉参考资料 | 默认按 `SKILL_SLOT_PRIORITY=115` 参与裁剪（**高于检索**，见 §十）；要"永不裁"必须显式配置并知道代价 |
 
 ### 9.4 流程与范围
 
@@ -381,6 +381,22 @@ cd F:\shujuf\code\context-engine-agent\backend
    修法是**加宽路由词**，不是改题（探针集不能为了好看而调）。
 2. 指标算反了：第一版把"负向题通过率"当误命中率，显示 `1.0000`（实际是全对）。
    改成按实际命中的负向题数计算 → `0.0000`。
+
+### 阶段 5（真实使用截图暴露的两个问题）
+
+1. **"命中 1 条、注入 0 条"**（长跑服务）：`ensure_synced()` 只比对「磁盘语料 vs manifest」，
+   而服务进程启动时加载的是旧的一版语料；磁盘清单被另一个进程同步过之后，
+   `needs_sync=False` → **进程内旧语料永远用下去**。更糟的是那次"查不到"的结果被
+   检索缓存住（key 含问题原文），同一个问题从此永远返回空。
+   → 修法（`bd1bf0f`）：增加第二种"需要"——比对**进程内存**里的语料来源集合，
+   落后就 `retriever.load()` + `clear_cache()`（**不重建、不花 embedding 钱**）；
+   `Retriever` 抽出公开的 `clear_cache()`。补 2 条回归测试。
+2. **技能槽会被参考资料挤掉**：rerank 给检索槽的优先级最高到 **110**
+   （`10 + rel*100`），而技能槽原本只有 70 —— 预算一紧（截图里 4037/4096 = 99%）
+   技能**最先被裁**。
+   → 决策：技能=**行为约束**、检索=**参考资料**，规则优先。`SKILL_SLOT_PRIORITY`
+   默认改为 **115**（可用 `.env` 覆盖），并补一条"预算不够时先裁检索槽"的回归测试。
+   注意 `system` 槽由 `PROTECTED_KINDS` 兜底（永不裁），不靠这个数值竞争。
 
 **未做（有意推迟的）**
 

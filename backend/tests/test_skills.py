@@ -313,10 +313,30 @@ class SkillContextTest(_OfflineSkillCorpus):
         )
         slot = next((s for s in ctx.slots if s.kind == "skill"), None)
         self.assertIsNotNone(slot, "技能应作为独立槽位进入上下文")
-        self.assertEqual(slot.priority, 70)          # 高于 tool(60)，低于 system(100)
+        # 必须高于检索槽（rerank 给检索最高 110）：规则比资料先活下来
+        self.assertEqual(slot.priority, config.SKILL_SLOT_PRIORITY)
+        self.assertGreater(slot.priority, 110)
         # 这条断言防的是"槽位建了、render_messages 却没写分支"的静默丢弃
         messages = eng.render_messages(ctx, "q")
         self.assertIn("抽不到参数就向用户追问", messages[0]["content"])
+
+    def test_skill_outranks_retrieval_when_budget_is_tight(self):
+        """预算不够时**先裁检索槽**，技能槽要活下来（否则规则会被资料挤掉）。"""
+        eng = ContextEngine(250, reranker=Reranker())
+        ctx = eng.build(
+            user_input="q", retrieved=[], history=[], system_prompt="S",
+            skills=[self._chunk(text="技" * 200)],
+        )
+        self.assertIn("skill", [s.kind for s in ctx.slots])
+
+        ctx2 = eng.build(
+            user_input="q",
+            retrieved=[RetrievedChunk(text="参" * 300, source="doc.txt", score=1.0)],
+            history=[], system_prompt="S", skills=[self._chunk(text="技" * 200)],
+        )
+        kinds = [s.kind for s in ctx2.slots]
+        self.assertIn("skill", kinds, "技能是行为约束，不能被参考资料挤掉")
+        self.assertNotIn("retrieval", kinds, "预算不够时应先裁参考资料")
 
     def test_skill_slot_is_trimmed_under_tight_budget(self):
         eng = ContextEngine(2, reranker=Reranker())
