@@ -45,6 +45,17 @@ ALLOW_ORIGINS = os.getenv(
 QWEN_CHAT_MODEL = os.getenv("QWEN_CHAT_MODEL", "qwen3-max")
 QWEN_EMBED_MODEL = os.getenv("QWEN_EMBED_MODEL", "text-embedding-v4")
 
+# DeepSeek（OpenAI 兼容接口）-------------------------------------------------------
+# 官方文档：base_url=https://api.deepseek.com，模型 deepseek-flash / deepseek-v4-pro。
+# 实现用**核心依赖** requests 直连，不引 openai SDK（见 app/models/deepseek_api.py）。
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip()
+DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
+DEEPSEEK_CHAT_MODEL = os.getenv("DEEPSEEK_CHAT_MODEL", "deepseek-flash")
+
+#: 显式指定对话后端；``auto`` = 用隐式优先级（保持旧行为）。
+#: 想强制离线演示（不花钱）写 ``fake``；想切模型不用删 key。
+CHAT_BACKEND = os.getenv("CHAT_BACKEND", "auto").strip().lower()
+
 # Context Engine settings --------------------------------------------------------
 # Token budget reserved for the final generation prompt. The context engine
 # allocates the budget across (system + retrieval + history) and trims the
@@ -146,12 +157,18 @@ LOCAL_MODEL_DIR = os.getenv("LOCAL_MODEL_DIR", "")
 def effective_chat_backend() -> str:
     """Return which chat backend will actually be used.
 
-    Priority: local fine-tuned adapter > qwen api (if key) > fake.
+    优先看**显式开关** ``CHAT_BACKEND``（非 auto 时以它为准：切模型不用删 key，
+    也能一条配置强制离线演示）；否则按隐式优先级
+    ``local_ft > qwen_api > deepseek_api > fake``（看 adapter / key 是否存在）。
     """
+    if CHAT_BACKEND in ("fake", "qwen_api", "deepseek_api", "local_ft"):
+        return CHAT_BACKEND
     if (FT_OUTPUT_ADAPTER / "adapter_config.json").exists():
         return "local_ft"
     if DASHSCOPE_API_KEY:
         return "qwen_api"
+    if DEEPSEEK_API_KEY:
+        return "deepseek_api"
     return "fake"
 
 

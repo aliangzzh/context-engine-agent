@@ -21,8 +21,16 @@ from .base import ModelBackend
 LAST_DEGRADE = ""
 
 #: 后端名 -> 模块名 / 类名
-_MODULE = {"qwen_api": "app.models.qwen_api", "local_ft": "app.models.local_ft"}
-_CLASS = {"app.models.qwen_api": "QwenApiModel", "app.models.local_ft": "LocalFTModel"}
+_MODULE = {
+    "qwen_api": "app.models.qwen_api",
+    "deepseek_api": "app.models.deepseek_api",
+    "local_ft": "app.models.local_ft",
+}
+_CLASS = {
+    "app.models.qwen_api": "QwenApiModel",
+    "app.models.deepseek_api": "DeepSeekApiModel",
+    "app.models.local_ft": "LocalFTModel",
+}
 
 
 def get_model_backend(backend: str | None = None) -> ModelBackend:
@@ -86,10 +94,18 @@ def degrade_notice() -> str:
     """给人看的排查提示（启动横幅用）；没降级返回空串。"""
     if not LAST_DEGRADE:
         return ""
+    # 修复建议要跟着后端走：DeepSeek 用 requests 直连，**不需要装依赖**，
+    # 让用户去 pip install 只会白折腾一轮。
+    wanted = config.effective_chat_backend()
+    fix = (
+        "在 backend/.env 里填 DEEPSEEK_API_KEY（这个后端不需要额外依赖）"
+        if wanted == "deepseek_api"
+        else "pip install -r requirements-llm.txt（只填 .env 里的 key 不够）"
+    )
     return (
         "[警告] 配置的对话后端没有生效，回答会是【离线演示】（只回放上下文，不生成真实答案）。\n"
         f"       原因：{LAST_DEGRADE}\n"
         "       排查：① 用哪个解释器启动的？应该用项目自己的 .venv\\Scripts\\python.exe\n"
-        "             ② 装依赖：pip install -r requirements-llm.txt（只填 .env 里的 key 不够）\n"
+        f"             ② {fix}\n"
         "             ③ 确认：看 /health 的 model 字段，而不是 chat_backend"
     )
