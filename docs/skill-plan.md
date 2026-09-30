@@ -225,7 +225,7 @@ cd F:\shujuf\code\context-engine-agent\backend
 |---|---|---|---|
 | 1 | 上下文面板里**有** `skill` 槽，但回答完全不受影响 | `engine.py:112-127` 的 `render_messages` 是 `elif` 链、**没有 `else`**：新 kind 不进 prompt | 加 `skill` 分支 + 写死一条测试断言（§5 第 5 条） |
 | 2 | 问"工具参数怎么抽"，检索回来的却是"尺码推荐" | `retriever.py:193` 缓存 key 没有语料维度 + 缓存是进程级单例（`cache.py:92-99`，Redis 下 `clear()` 直接 `flushdb()` `cache.py:87`） | 缓存 key 加 namespace（如 `retrieve:skills:...`） |
-| 3 | `/health` 里 `retrieval_effective` **永远是 bm25**，配了 hybrid 也没用 | `vector_index.py:63` 的指纹对**全部**文本算；两库共用 `VECTOR_INDEX_NAME`（`config.py:78`）→ 指纹互踩，**恒 STALE** | 技能库用独立 `index_name` / `index_dir`（`vector_index.py:122-134`） |
+| 3 | `/health` 里 `retrieval_effective` **永远是 bm25**，配了 hybrid 也没用 | `vector_index.py:63` 的指纹对**全部**文本算；**指纹文件是按目录放的**（`meta_path = dir/index_meta.json`）→ 只换 `index_name` 不够，同目录仍会互踩，**恒 STALE** | 技能库用**独立索引目录**（`SKILL_INDEX_DIR`）+ 独立索引名 |
 | 4 | 技能库一入库，**业务问答的召回变差**（或反过来） | BM25 是"一坨扁平语料"（`retriever.py:63/97`），一个实例只有一份 docs，两库一起塞会互相挤掉 top-k | 物理隔离：独立 `kb.json` + 独立 `Retriever` 实例 |
 | 5 | 本地全绿，**CI 红**；或 `--check` 直接判回退 | 新增题目会改 `overall_pass_rate` 的分母（`run.py:295-296`），旧 baseline 立刻算回退 | 确认改动正确后 `--save-baseline` **重冻**，并让 `test_eval.py:74-77` 用新基线 |
 | 6 | `unittest` 红在评测那条：类别集合不相等 | `test_eval.py:47-49` 是**集合相等**断言，`KNOWN_CATEGORIES`（`:25`）必须同步 | 加类别名，和 `dataset.json` 一起改 |
@@ -298,6 +298,48 @@ cd F:\shujuf\code\context-engine-agent\backend
 | 13 | `backend/scripts/collect_experience.py` | 归档脚本（`docs/ai-assisted.md` §3 四类 + `code-review.md` + `git log` → 四段式 md，MD5 幂等） | 仿 `scripts/upload_corpus.py` |
 | 14 | `backend/eval/` | `dataset_skill.json` + `run.py` 的 `score_case` / `METRIC_KEYS` / `CATEGORY_TITLE` + `test_eval.py` 类别集合 + 重冻 `baseline.json` | run.py:190-256 / 260-270 / 382-388 |
 | 15 | `docs/evaluation.md`、`docs/architecture.md`、`README.md` | 各加一节（口径、模块、特性） | — |
+
+---
+
+## 十、实施记录（方案 B 执行中）
+
+### 阶段 1（commit `909b971`）
+
+- 技能规范 `skills/README.md` + 第一份真实技能 `skills/tool-arg-extraction/`（含 references 案例）
+- 后端 `app/skills/`：零依赖容错 loader + 关键词 matcher + 进程内缓存
+- `search_skill` 注册进 `TOOLS`，并补了 `mcp_server.py` 的 JSON Schema（**外部 Agent 已可通过 MCP 调**）
+- 项目自身的 `.agents/skills/context-engine-agent/SKILL.md`
+- 验收：**130 个测试全绿**（116 + 14）、评测门九项 `1.0000`（commit `909b971`）
+
+### 阶段 2
+
+- 补齐 4 条真实技能（全部来自 `docs/ai-assisted.md` §3 实际修过的问题）：
+  `tool-arg-extraction` / `silent-exception-swallow` / `sqlite-cross-thread` / `api-field-drift`
+- `app/skills/store.py`：**独立技能语料**（`backend/data/skills/kb.json`）+ 独立向量索引目录
+  （`SKILL_INDEX_DIR`）+ 缓存 key 加 namespace；md5 清单**幂等**同步，技能删除即从语料移除（防幽灵命中）
+- `app/retrieval/retriever.py`：`namespace` / `index_name` / `index_dir` 三个参数，**默认拼出的
+  缓存 key 与改造前逐字节一致**（业务库零行为变化），并抽出 `_cache_key()` 便于测试断言
+- `scripts/collect_experience.py`：`draft`（文档 → 草稿）/ `check`（格式校验，可挂 CI）/ `sync`（入库）
+- 验收：**136 个测试全绿**、评测门不变、`check` 退出码 0
+
+**实施中修正的两个判断（计划里写错/写浅了）**
+
+1. **只换索引名不够，必须换索引目录**：`VectorIndex.meta_path` 是 `<dir>/index_meta.json`，
+   指纹文件按**目录**存放 → 同目录不同索引名仍共用一份指纹、互相判 STALE。
+   已改代码注释与 §2 的坑 3。
+2. **技能库的门控必须比业务库更严**：实测问「今天天气怎么样」时，只按 `is_relevant` 放行会命中
+   `tool-arg-extraction`（技能正文含"怎么自查"，而字符级 BM25 的分数根本分不开：
+   真命中 0.0328 vs 误命中 0.0161）。最终实现是 **关键词精准门 → 语料检索排序/取正文**
+   （`search_skill` 的 ①→② 顺序）。**是否放宽留给阶段 4 用评测数据决定**，不凭感觉调。
+
+**有意推迟的**
+
+- `skill_meta` 表（技能元数据 + 命中次数）：检索路径用不到它，等做前端技能页 / 看板时再加，
+  免得为统计去动 `db.py` 里**两份**建表语句（SQLite + MySQL）。
+- `draft` 子命令还没实际跑过：第一次跑会生成 `skills/_inbox/` 草稿（草稿不进语料，
+  只在 `check` 里提示"还有 N 份待补全"）。
+- 技能语料配了 DashScope key 时会**真的建向量索引**（实测产出 `ctxeng_faiss_db_skills`）；
+  测试里已强制 BM25，避免每次跑测试都调 embedding。
 
 ---
 

@@ -93,6 +93,15 @@ MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(2 * 1024 * 1024)))
 SKILL_ENABLED = os.getenv("SKILL_ENABLED", "1").lower() in ("1", "true", "yes")
 SKILL_DIR = Path(os.getenv("SKILL_DIR", str(PROJECT_DIR / "skills")))
 SKILL_TOP_K = int(os.getenv("SKILL_TOP_K", "2"))
+#: 技能语料（派生数据，进 .gitignore）：与业务知识库**物理隔离**
+SKILL_KB_PATH = Path(os.getenv("SKILL_KB_PATH", str(DATA_DIR / "skills" / "kb.json")))
+#: 技能向量索引：既换名字也换目录。只换名字不够——index_meta.json 按目录放，
+#: 同目录会共用同一份指纹，导致两套语料互相判 STALE。
+SKILL_INDEX_NAME = os.getenv("SKILL_INDEX_NAME", "skills")
+SKILL_INDEX_DIR = os.getenv(
+    "SKILL_INDEX_DIR",
+    str(Path(FAISS_PERSIST_DIR).with_name(Path(FAISS_PERSIST_DIR).name + "_skills")),
+)
 
 # Storage / DB -------------------------------------------------------------------
 # Conversational history is persisted to a relational store.

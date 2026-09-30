@@ -118,14 +118,26 @@ class BM25Index:
 class Retriever:
     """A pluggable facade over BM25 or embedding-similarity retrieval."""
 
-    def __init__(self, backend: Optional[str] = None, kb_path: Optional[object] = None):
+    def __init__(
+        self,
+        backend: Optional[str] = None,
+        kb_path: Optional[object] = None,
+        namespace: str = "",
+        index_name: Optional[str] = None,
+        index_dir: Optional[object] = None,
+    ):
         self.backend = (backend or config.effective_retrieval_backend())
         self.kb_path = kb_path or (config.KB_DIR / "kb.json")
+        #: 语料命名空间：用来区分"业务知识库 / 技能库"这类**并列语料**。
+        #: 必须区分——检索缓存的 key 原本只有 backend+k+query，没有语料维度（见 _cache_key）。
+        self.namespace = (namespace or "").strip()
         self.texts: list[str] = []
         self.metas: list[dict] = []
         self.bm25 = BM25Index()
-        #: 向量索引：建/追加/落盘/指纹校验都在它内部，这里只做调度与降级判定
-        self.vector = VectorIndex()
+        #: 向量索引：建/追加/落盘/指纹校验都在它内部，这里只做调度与降级判定。
+        #: 并列语料**必须换 index_dir**：index_meta.json 是按目录放的，同目录换个名字
+        #: 仍然共用同一份指纹文件 → 表现为"恒 STALE、永远降级 BM25"（踩过一次）。
+        self.vector = VectorIndex(index_dir=index_dir, index_name=index_name or config.VECTOR_INDEX_NAME)
         #: 最近一次降级原因（/health 与日志用；"没降级"时为空串）
         self.last_degrade = ""
         self._cache = get_cache()  # cache retrieval results (LRU by default)
@@ -187,10 +199,19 @@ class Retriever:
         return removed
 
     # -- search ---------------------------------------------------------------------
+    def _cache_key(self, k: int, query: str) -> str:
+        """检索缓存的 key：**必须带语料命名空间**。
+
+        namespace 为空时拼出来和旧版完全一致 ``retrieve:{backend}:{k}:{query}``，
+        业务知识库行为零变化；技能库用 ``retrieve:skills:...``，两套语料互不命中。
+        （不带语料维度 = 问技能库却命中业务库，见 docs/skill-plan.md §2 的坑 2）
+        """
+        prefix = f"retrieve:{self.namespace}" if self.namespace else "retrieve"
+        return f"{prefix}:{self.backend}:{k}:{query}"
+
     def search(self, query: str, k: Optional[int] = None) -> list[RetrievedChunk]:
         k = k or config.TOP_K
-        # Cache key includes backend + k so switching retrieval/flags is safe.
-        key = f"retrieve:{self.backend}:{k}:{query}"
+        key = self._cache_key(k, query)
         cached = self._cache.get(key)
         if cached is not None:
             try:

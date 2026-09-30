@@ -15,7 +15,17 @@ os.environ.setdefault("LOG_LEVEL", "CRITICAL")
 
 from app import config
 from app.agents.tools import TOOLS, extract_args, get_tool
-from app.skills import get_skills, parse_skill, reset_skills, search_skills
+from app.retrieval.retriever import Retriever
+from app.skills import (
+    get_skill_retriever,
+    get_skills,
+    parse_skill,
+    reset_skill_retriever,
+    reset_skills,
+    search_skill_corpus,
+    search_skills,
+    sync_skills,
+)
 from app.skills.loader import SkillError, load_skills
 
 _SCRATCH = Path(__file__).parent / "_scratch"
@@ -49,6 +59,25 @@ def _write_skill(root: Path, dirname: str, text: str) -> Path:
     p = d / "SKILL.md"
     p.write_text(text, encoding="utf-8")
     return p
+
+
+class _OfflineSkillCorpus(unittest.TestCase):
+    """强制 BM25：测试不联网、不调 embedding、结果确定。
+
+    本机 ``.env`` 里可能配了 DashScope key（还装了 faiss），不锁的话每次
+    ``sync`` 都会真的调 embedding —— 又慢又花钱，而且结果不确定。
+    """
+
+    def setUp(self):
+        self._saved_backend = config.RETRIEVAL_BACKEND
+        config.RETRIEVAL_BACKEND = "bm25"
+        reset_skills()
+        reset_skill_retriever()
+
+    def tearDown(self):
+        config.RETRIEVAL_BACKEND = self._saved_backend
+        reset_skill_retriever()
+        reset_skills()
 
 
 class SkillLoaderTest(unittest.TestCase):
@@ -121,7 +150,7 @@ class SkillMatcherTest(unittest.TestCase):
         self.assertIsNot(first, get_skills())
 
 
-class SkillToolTest(unittest.TestCase):
+class SkillToolTest(_OfflineSkillCorpus):
     def test_tool_registered_with_params(self):
         self.assertIn("search_skill", TOOLS)
         tool = get_tool("search_skill")
@@ -155,6 +184,73 @@ class SkillConfigTest(unittest.TestCase):
         self.assertEqual(config.SKILL_DIR.name, "skills")
         self.assertTrue(config.SKILL_ENABLED)
         self.assertGreaterEqual(config.SKILL_TOP_K, 1)
+
+
+class SkillCorpusTest(_OfflineSkillCorpus):
+    """技能语料（派生数据）：与业务库物理隔离、幂等同步、删除不留幽灵。"""
+
+    def setUp(self):
+        super().setUp()
+        self.loaded = get_skills(reload=True)
+        self.assertTrue(self.loaded.skills, "仓库里应该有技能（skills/*/SKILL.md）")
+
+    def tearDown(self):
+        # 恢复全量语料，避免影响其它测试与后续运行
+        sync_skills(get_skills(reload=True).skills, force=True)
+        super().tearDown()
+
+    def test_corpus_is_isolated_from_business_kb(self):
+        """三处都必须与业务库错开：语料文件 / 缓存命名空间 / 向量索引目录。"""
+        sk = get_skill_retriever()
+        self.assertEqual(sk.namespace, "skills")
+        self.assertNotEqual(Path(sk.kb_path), config.KB_DIR / "kb.json")
+        self.assertNotEqual(Path(sk.vector.dir), Path(config.FAISS_PERSIST_DIR))
+
+    def test_cache_key_separates_corpora_and_keeps_default_unchanged(self):
+        biz = Retriever(backend="bm25", kb_path=config.KB_DIR / "kb.json")
+        sk = get_skill_retriever()
+        # 业务库（无 namespace）拼出来和改造前完全一致 —— 零行为变化
+        self.assertEqual(biz._cache_key(3, "q"), "retrieve:bm25:3:q")
+        self.assertEqual(sk._cache_key(3, "q"), "retrieve:skills:bm25:3:q")
+
+    def test_sync_is_idempotent(self):
+        first = sync_skills(self.loaded.skills, force=True)
+        self.assertTrue(first["rebuilt"])
+        second = sync_skills(self.loaded.skills)
+        self.assertFalse(second["rebuilt"])
+        self.assertEqual(second["changed"], [])
+        self.assertEqual(second["removed"], [])
+
+    def test_corpus_search_hits_expected_skill(self):
+        sync_skills(self.loaded.skills, force=True)
+        hits = search_skill_corpus("工具参数抽取", k=3)
+        self.assertTrue(hits)
+        self.assertIn("tool-arg-extraction", " ".join(str(h.source) for h in hits))
+
+    def test_removed_skill_leaves_no_ghost_hits(self):
+        """技能被删掉后语料必须同步移除，否则会出现"删了还命中"的幽灵结果。"""
+        sync_skills(self.loaded.skills, force=True)
+        keep = [s for s in self.loaded.skills if s.name != "tool-arg-extraction"]
+        summary = sync_skills(keep, force=True)
+        self.assertIn("tool-arg-extraction", summary["removed"])
+        hits = search_skill_corpus("工具参数抽取", k=5)
+        self.assertNotIn("skill:tool-arg-extraction", [str(h.source) for h in hits])
+
+
+class CollectExperienceTest(unittest.TestCase):
+    """归档脚本：真文档要能抽出条目（否则"自动归档"是假的）。"""
+
+    def test_extracts_items_from_real_doc(self):
+        from scripts.collect_experience import collect_items
+
+        doc = Path(__file__).parents[2] / "docs" / "ai-assisted.md"
+        items = collect_items(doc.read_text(encoding="utf-8"))
+        self.assertGreaterEqual(len(items), 4)
+        titles = " ".join(i["title"] for i in items)
+        self.assertIn("沉默的错误", titles)
+        self.assertIn("假参数", titles)
+        # 抽出来的正文不能是空的（否则草稿没有素材价值）
+        self.assertTrue(all(i["body"].strip() for i in items))
 
 
 if __name__ == "__main__":

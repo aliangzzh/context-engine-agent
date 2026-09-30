@@ -27,6 +27,9 @@ backend/finetune/outputs/
 backend/eval/_run/
 backend/eval/reports/
 
+# 技能库：正文（skills/）进版本库；派生语料与索引不进
+backend/data/skills/
+
 # Node
 node_modules/
 frontend/dist/
