@@ -80,6 +80,10 @@ class Health(BaseModel):
     chat_backend: str
     retrieval_backend: str
     model: str = ""
+    #: 配置的对话后端没起来时的一行原因（空串 = 正常）。
+    #: 为什么要有它：只填 key 不装依赖会**静默退回离线模型**，界面上只看得到
+    #: chat_backend=qwen_api，必须有个字段能把原因说清楚（同 vector_index 的 missing_deps）。
+    chat_degraded_reason: str = ""
     db_backend: str = ""      # sqlite | mysql
     cache_backend: str = ""   # lru | redis
     #: 运行时**实际生效**的检索后端。索引不可用/与语料不一致时会降级成 bm25。

@@ -49,6 +49,8 @@ button, input, textarea, select {
   font-size: 12px; background: var(--panel2); border: 1px solid var(--border);
   padding: 4px 10px; border-radius: 12px; color: var(--accent2); white-space: nowrap;
 }
+/* 后端降级（配置写了 qwen_api 实际是 fake / 向量降级 bm25）：徽章要看得出来 */
+.badge.warn { background: #4a3320; border-color: #a4652f; color: #ffd7a8; }
 .switch { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); cursor: pointer; }
 .app-main { flex: 1; display: flex; overflow: hidden; }
 

@@ -51,7 +51,15 @@ const kindIcon: Record<string, string> = {
 export default {
   methods: {
     pretty(v: any): string {
-      if (Array.isArray(v)) return v.join(', ')
+      if (v === null || v === undefined) return ''
+      if (Array.isArray(v)) return v.map((x) => this.pretty(x)).join('、')
+      if (typeof v === 'object') {
+        // 常见形状是"对象数组"：工具定义 / 命中的技能。以前直接 String() 会渲染成
+        // [object Object], [object Object]（router 的 detail.tools 就踩过这个坑）。
+        if ('name' in v) return String(v.name)
+        if ('source' in v) return String(v.source)
+        return JSON.stringify(v)
+      }
       return String(v)
     },
   },

@@ -19,7 +19,7 @@ from ..context.rerank import Reranker
 from ..context.summarizer import HistorySummarizer
 from ..logging_config import get_logger, log
 from ..metrics import get_metrics
-from ..models import get_model_backend
+from ..models import degrade_reason, get_model_backend
 from ..retrieval.knowledge import KnowledgeBase
 from ..retrieval.retriever import get_retriever
 from ..schemas import ChatReply, ChatRequest, Health, IngestResult
@@ -73,6 +73,10 @@ class AppServices:
                 vector_info["last_degrade"] = self.retriever.last_degrade
         except Exception:  # 健康检查本身不能挂
             effective, vector_info = config.effective_retrieval_backend(), {}
+        # 降级原因：配置写着 qwen_api、实际跑 fake 时必须能说出为什么（这个坑踩过一次）
+        degrade = degrade_reason()
+        if not degrade and self.model.name == "fake" and config.effective_chat_backend() != "fake":
+            degrade = "配置的对话后端未生效，实际用的是离线 fake 模型"
         return Health(
             status="ok",
             chat_backend=config.effective_chat_backend(),
@@ -83,6 +87,7 @@ class AppServices:
             # 排查过一次"终端里依赖齐全、服务里全缺"，就是靠这个字段定死的。
             runtime={"python": sys.executable, "version": sys.version.split()[0]},
             model=self.model.name,
+            chat_degraded_reason=degrade,
             db_backend=config.effective_db_backend(),
             cache_backend=config.effective_cache_backend(),
         )

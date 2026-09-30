@@ -97,6 +97,10 @@ export interface Health {
   chat_backend: string
   retrieval_backend: string
   model: string
+  //: 配置的后端没生效时的一行原因（空串 = 正常）
+  chat_degraded_reason?: string
+  //: 运行时**实际生效**的检索后端（可能已降级成 bm25）
+  retrieval_effective?: string
   db_backend: string
   cache_backend: string
 }

@@ -29,6 +29,7 @@ from app.api import (
 )
 from app.errors import ErrorCode, error_from_exception, fail
 from app.logging_config import get_logger, setup_logging
+from app.models import degrade_notice, probe_degrade
 from app.multipart import MAX_UPLOAD_BYTES
 
 logger = get_logger("app.server")
@@ -259,6 +260,12 @@ def main():
     print(f"Context Engine server running at http://localhost:{config.APP_PORT}")
     print(f"  UI:      http://localhost:{config.APP_PORT}/")
     print(f"  health:  http://localhost:{config.APP_PORT}/health")
+    # "配了 key 但依赖没装 → 静默退回离线模型"必须在启动时就喊出来：
+    # 否则界面徽章写着 qwen_api、回答却全是【离线演示】，只能靠猜（踩过一次）。
+    probe_degrade()
+    notice = degrade_notice()
+    if notice:
+        print("\n" + notice + "\n")
     srv.serve_forever()
 
 
