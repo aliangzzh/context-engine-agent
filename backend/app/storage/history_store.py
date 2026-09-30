@@ -86,6 +86,20 @@ class SQLChatStore:
             )
         return self.load(session_id)
 
+    def sessions(self) -> list[str]:
+        """所有会话 id，按最近活动排序（技能归档 / 看板都要用）。
+
+        用 ``MAX(id)`` 而不是时间戳排序：``id`` 是自增主键，天然反映写入顺序，
+        不依赖 ``created_at`` 的时区/格式（SQLite 与 MySQL 两边语法都成立）。
+        """
+        with self._lock:
+            cur = self._cursor()
+            cur.execute(
+                "SELECT session_id, MAX(id) AS last_id FROM turns "
+                "GROUP BY session_id ORDER BY last_id DESC"
+            )
+            return [row[0] for row in cur.fetchall()]
+
     def close(self) -> None:
         with self._lock:
             try:

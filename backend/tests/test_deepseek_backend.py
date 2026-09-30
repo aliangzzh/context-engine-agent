@@ -118,6 +118,22 @@ class DeepSeekProtocolTest(unittest.TestCase):
             DeepSeekApiModel()
         self.assertIn("DEEPSEEK_API_KEY", str(ctx.exception))
 
+    def test_placeholder_key_is_rejected_with_human_message(self):
+        """中文占位符 key（.env 里很容易留下）要给出人话原因。
+
+        真实踩过：`.env` 里写了 `DEEPSEEK_API_KEY=sk-你的key`，而它会被塞进
+        Authorization 头 → requests 只接受 latin-1 → 报
+        "UnicodeEncodeError: 'latin-1' codec can't encode..."，完全看不懂。
+        """
+        config.DEEPSEEK_API_KEY = "sk-你的key"
+        from app.models.deepseek_api import DeepSeekApiModel
+
+        with self.assertRaises(RuntimeError) as ctx:
+            DeepSeekApiModel()
+        message = str(ctx.exception)
+        self.assertIn("非 ASCII", message)
+        self.assertIn("platform.deepseek.com", message)
+
 
 class ChatBackendSwitchTest(unittest.TestCase):
     """配置层：显式开关 + 隐式优先级 + 降级自证。"""

@@ -128,21 +128,40 @@ cd backend && python mcp_server.py     # JSON-RPC 2.0 over stdio
 
 ### 6.6 自己产一条技能（归档链路）
 
+两条入口：**从文档起草**、**从对话历史起草**。
+
 ```bash
+# A) 从 docs/ 抽「N. **标题**：解释」形式的条目
 python -m scripts.collect_experience draft     # docs/ → skills/_inbox/*.md 草稿（半成品，需人工补全）
-# 补全 TODO、删掉草稿注释后，移到 skills/<kebab-case>/SKILL.md
+
+# B) 从对话历史抽"值得沉淀的事件片段"（默认只列候选、不写文件）
+python -m scripts.collect_experience from-chat --top 6 --verbose   # 只看
+python -m scripts.collect_experience from-chat --write             # 确认后落进 _inbox/
+
+# 人工过三问、补全四段式后，移到 skills/<kebab-case>/SKILL.md
 python -m scripts.collect_experience check
 python -m scripts.collect_experience sync
 ```
 
 > `skills/_inbox/` 是**草稿区**：loader 只认 `*/SKILL.md`，所以草稿再乱也**不会进检索语料**；
 > 它同时已加进 `.gitignore`（草稿属于本地素材，不进版本库）。
->
-> **把一段对话变成技能**（目前是手工闭环，`draft --from-chat` 还没做）：
-> ① 把「来源会话 + 问题 + 回答要点 + 证据」记成一份草稿（原始素材，什么都有）；
-> ② 压成四段式（现象 / 根因 / 修复 / 验证），仍放 `_inbox/`，**标清 TODO**；
+
+**`from-chat` 是怎么挑候选的**（三层信号，宁可漏、不要错）：
+
+| 规则 | 说明 |
+|---|---|
+| 切片段 | 遇到含**现象词**的用户轮就开一段（一次排查通常跨好几轮），片段最多 8 轮 |
+| 打分 | **现象**（只在用户提问里找）× **动作** × **验证** 三类信号各 2 分，首问 +1，有长回答 +1 |
+| 门槛 | 必须有现象词、至少两类信号；**命中业务/闲聊词就整段丢弃**（业务问答不是开发经验） |
+| 去重 | 用**内容词覆盖率**（不是 Jaccard，会被长度差稀释）：与已有技能/草稿、以及**本批候选之间**比，≥0.7 就算重复 |
+| 落盘 | 草稿头部标 **AI 抽取 · 未验证**；头部写清来源会话、起始轮次、命中的信号词、打分 |
+
+> **把一段对话变成技能**的正确姿势（两段式 + 一个闸门）：
+> ① `from-chat` 自动起草（素材，可以有错、可以有中间态判断）；
+> ② 人工过三问 —— **真踩过吗 / 验证指向哪个文件或测试 / 和已有技能重复吗**；
 > ③ 补全后移到 `skills/<name>/SKILL.md` → `check` → `sync` → 立刻可被 Agent 命中。
-> 关键是第 ② 步不要跳过：原始问答直接当技能会变成垃圾堆，还会挤掉上下文预算（一条技能约 846 token）。
+> 关键是第 ② 步不要跳过：会话里的中间判断经常是错的，而技能会被当**硬约束**注入模型
+> （一条技能约 846~1345 token，写成垃圾还会挤掉上下文预算）。
 
 ### 6.7 看不到效果时的三个排查点
 

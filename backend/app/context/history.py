@@ -42,6 +42,10 @@ class ChatStore:
     def append(self, session_id: str, turn: HistoryTurn) -> list[HistoryTurn]:
         return self._store.append(session_id, turn)
 
+    def sessions(self) -> list[str]:
+        """所有会话 id（按最近活动排序）——技能归档 / 看板用。"""
+        return self._store.sessions()
+
 
 class HistoryManager:
     """Sliding-window + optional rolling summary over a session's history."""

@@ -38,9 +38,18 @@ class DeepSeekApiModel(ModelBackend):
         temperature: float = 0.3,
         base_url: str | None = None,
     ):
-        self._key = (config.DEEPSEEK_API_KEY or "").strip()
+        self._key = (config.DEEPSEEK_API_KEY or "").strip().strip('"').strip("'")
         if not self._key:
             raise RuntimeError("缺少 DEEPSEEK_API_KEY（在 backend/.env 里配置）")
+        # 占位符防守：.env 里很容易留下 "sk-你的key" 这种中文占位符，而它会被塞进
+        # Authorization 头 —— requests 只接受 latin-1，报错是
+        # "UnicodeEncodeError: 'latin-1' codec can't encode..."，完全看不懂。
+        # 这里提前判一次，给出人话原因（会被 models._safe 记进 /health 的降级原因）。
+        if not self._key.isascii():
+            raise RuntimeError(
+                "DEEPSEEK_API_KEY 不像真实 key（含非 ASCII 字符，可能是中文占位符）。"
+                "请到 https://platform.deepseek.com/api_keys 申请后填进 backend/.env"
+            )
         self._model = model or config.DEEPSEEK_CHAT_MODEL
         self._temperature = temperature
         self._base = (base_url or config.DEEPSEEK_BASE_URL).rstrip("/")
