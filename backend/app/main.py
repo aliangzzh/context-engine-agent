@@ -191,6 +191,28 @@ async def skill_sync(payload: dict | None = None) -> dict:
     return JSONResponse(status_code=status, content=body)
 
 
+@app.get("/api/skills/drafts", tags=["skills"], summary="草稿区列表（_inbox/ 里的素材）")
+async def skill_drafts() -> dict:
+    status, body = await run_in_threadpool(api.handle_skill_drafts)
+    return JSONResponse(status_code=status, content=body)
+
+
+@app.delete("/api/skills/drafts/{name}", tags=["skills"],
+            summary="移除草稿（归档到 _trash，不是真删）",
+            responses={404: {"description": "草稿不存在(40400)"}})
+async def skill_draft_archive(name: str) -> dict:
+    status, body = await run_in_threadpool(api.handle_skill_draft_archive, name)
+    return JSONResponse(status_code=status, content=body)
+
+
+@app.post("/api/skills/draft-from-chat", tags=["skills"],
+          summary="把某一轮对话沉淀成草稿（人工显式信号，仍然查重）",
+          responses={409: {"description": "对话记录已变化，请刷新(40900)"}})
+async def skill_draft_from_chat(payload: dict) -> dict:
+    status, body = await run_in_threadpool(api.handle_skill_draft_from_chat, payload or {})
+    return JSONResponse(status_code=status, content=body)
+
+
 # --- feedback ---------------------------------------------------------------------
 @app.post("/api/feedback", tags=["feedback"], summary="提交 badcase 反馈")
 async def feedback(payload: FeedbackRequest) -> dict:

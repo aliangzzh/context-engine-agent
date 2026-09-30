@@ -181,180 +181,16 @@ def cmd_sync(args: argparse.Namespace) -> int:
 
 
 # --- 从对话历史起草（from-chat）------------------------------------------------------
-#: 三类信号 = 四段式的雏形（现象 → 动作 → 验证）。
-#: **现象只在用户提问里找**：用户主动提出的问题才是真踩坑；动作/验证可以在任意位置。
-_SYMPTOM = (
-    "报错", "错误", "异常", "失败", "Error", "Exception", "Traceback", "不对", "不生效",
-    "没生效", "无效", "认不出", "错在哪", "覆盖了", "丢了", "崩", "为什么",
+# 起草规则（切片 / 打分 / 查重 / 渲染）统一放在 ``app/skills/drafting.py``：
+# **对话页的「沉淀为经验」按钮和这个 CLI 必须用同一套规则**，否则两个入口产出的草稿
+# 会不一样、查重也互相看不见。这里只做名字转发，脚本本身只管参数与打印。
+from app.skills.drafting import (          # noqa: E402
+    draft_filename, existing_corpus, find_duplicate, is_candidate,
+    render_draft, score_segment, segments_from_turns,
 )
-_ACTION = (
-    "修复", "改成", "换成", "加上", "删掉", "回滚", "重建", "降级", "隔离", "加锁",
-    "重试", "定位", "排查", "覆盖", "改完", "补上", "拆分",
-)
-_VERIFY = (
-    "验证", "测试", "跑一遍", "断言", "全绿", "复现", "仍然", "还是", "通过", "确认",
-    "重建后", "再查", "对比",
-)
-#: 业务/闲聊词：命中就整段丢弃 —— 业务问答不是开发经验（实测里 12 轮的业务会话
-#: 会靠"修复/重建"这类词蹭到高分，所以这里用"丢弃"而不是"扣分"）。
-_OFFTOPIC = (
-    "尺码", "洗护", "洗涤", "物流", "售后", "积分", "库存", "材质", "颜色", "天气",
-    "气温", "几点", "你好", "您好", "谢谢", "hi", "hello", "你是谁",
-)
-#: 一个片段最多几轮；超了就断开（长片段容易"蹭分"）
-MAX_SEGMENT_TURNS = 8
+
 #: 默认只输出前 N 条（防 inbox 爆炸）
 DEFAULT_TOP = 5
-#: 候选的内容词被已有条目**覆盖率**超过这个值 → 算重复
-DUP_COVERAGE = 0.7
-#: 草稿里最多摘录多少字回答（素材，不是全文）
-EXCERPT_LIMIT = 1200
-
-_SCRUB = (
-    (re.compile(r"sk-[A-Za-z0-9_\-]{8,}"), "sk-***"),
-    (re.compile(r"(?i)(bearer\s+)[A-Za-z0-9_\-\.]{8,}"), r"\1***"),
-    (re.compile(r"(?i)(api[_\-]?key\s*[=:]\s*)\S+"), r"\1***"),
-    (re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}\b"), "***.***.***.***"),
-)
-
-
-def scrub(text: str) -> str:
-    """脱敏：对话里可能带 key / Authorization 头 / 内网 IP，落盘前统一打码。"""
-    out = text or ""
-    for pattern, repl in _SCRUB:
-        out = pattern.sub(repl, out)
-    return out
-
-
-def _hits(text: str, words) -> list[str]:
-    return [w for w in words if w in text]
-
-
-def segments_from_turns(session_id: str, turns: list) -> list[dict]:
-    """把会话切成"事件片段"：遇到含现象词的**用户轮**就开一段。
-
-    为什么不按会话切：一次排查通常跨好几轮（"为什么 X" → "试了 Y" → "原来 Z"），
-    按会话切会把几个坑混成一条；按单轮切又会把一次排查切碎。
-    """
-    segments: list[dict] = []
-    current: dict | None = None
-    for index, turn in enumerate(turns, start=1):
-        question = getattr(turn, "user", "") or ""
-        if current is None or _hits(question, _SYMPTOM):
-            if current is not None:
-                segments.append(current)
-            current = {"session": session_id, "start": index, "turns": []}
-        current["turns"].append(turn)
-        if len(current["turns"]) >= MAX_SEGMENT_TURNS:
-            segments.append(current)
-            current = None
-    if current and current["turns"]:
-        segments.append(current)
-    return segments
-
-
-def score_segment(segment: dict) -> dict:
-    """给片段打分：三类信号是主体，首问/有实质结论加分，业务与超长减分。"""
-    turns = segment["turns"]
-    questions = " ".join(getattr(t, "user", "") or "" for t in turns)
-    answers = " ".join(getattr(t, "assistant", "") or "" for t in turns)
-    whole = f"{questions} {answers}"
-
-    symptom = _hits(questions, _SYMPTOM)
-    action = _hits(whole, _ACTION)
-    verify = _hits(whole, _VERIFY)
-    offtopic = _hits(whole, _OFFTOPIC)
-    categories = sum(1 for group in (symptom, action, verify) if group)
-
-    score = float(categories * 2)
-    score += 1.0 if symptom else 0.0
-    score += 1.0 if len(answers) > 400 else 0.0
-    score -= 0.5 * max(0, len(turns) - MAX_SEGMENT_TURNS)
-
-    return {
-        "score": round(score, 1),
-        "categories": categories,
-        "symptom": symptom[:4],
-        "action": action[:4],
-        "verify": verify[:4],
-        "offtopic": offtopic,
-        "turns": len(turns),
-        "start": segment["start"],
-        "session": segment["session"],
-        "first_question": (getattr(turns[0], "user", "") or "").strip(),
-        "questions": [getattr(t, "user", "") or "" for t in turns],
-        "answer": answers,
-        "segment": segment,
-    }
-
-
-def is_candidate(item: dict) -> bool:
-    """够不够格进草稿：现象出现在**用户提问**里 + 至少两类信号 + 不是业务/闲聊。"""
-    return bool(item["symptom"]) and item["categories"] >= 2 and not item["offtopic"]
-
-
-def find_duplicate(question: str, text: str, existing: dict[str, str]) -> tuple[str, float] | None:
-    """查重：① 候选内容基本被已有条目覆盖 ② 问题本身被覆盖（同一个坑问了多次）。
-
-    为什么用**覆盖率**而不是 Jaccard：Jaccard 会被"长度差"稀释 —— 候选几百字、
-    已有技能一两千字时，即便讲的是同一件事也可能低于阈值（实测漏判过：同一个问题在
-    4 个会话里各问一次，只抓到最后一对）。覆盖率是不对称的，正好表达
-    "这条候选已经被覆盖了"。
-    """
-    from app.context.rerank import coverage
-
-    best: tuple[str, float] | None = None
-    for name, other in existing.items():
-        if not (other or "").strip():
-            continue
-        score = max(coverage(text, other), coverage(question, other))
-        if score >= DUP_COVERAGE and (best is None or score > best[1]):
-            best = (name, round(score, 2))
-    return best
-
-
-def existing_corpus() -> dict[str, str]:
-    """查重目标：正式技能（名字+描述+正文）与草稿区里的文件。"""
-    corpus: dict[str, str] = {}
-    for skill in get_skills(reload=True).skills:
-        corpus[f"skill:{skill.name}"] = f"{skill.name} {skill.description} {skill.body}"
-    if _inbox().is_dir():
-        for path in sorted(_inbox().glob("*.md")):
-            text = path.read_text(encoding="utf-8", errors="ignore")
-            text = re.sub(r"<!--.*?-->", " ", text, flags=re.S)   # 模板注释不是内容
-            text = text.split("## 待提炼")[0]                      # 四段式骨架是模板
-            corpus[f"draft:{path.name}"] = text
-    return corpus
-
-
-CHAT_DRAFT_TEMPLATE = """<!-- 草稿：由 scripts/collect_experience.py from-chat 从**对话历史**自动抽取。
-     ⚠️ AI 抽取 · **未验证** —— 会话里的中间判断经常是错的（例如先误判成环境问题、
-        后来才定位到真正原因）。人工过三问之后，再移到 skills/<kebab-case>/SKILL.md：
-           ① 真踩过吗（能指出当时的报错/现象）？
-           ② 验证指向哪个文件 / 哪条测试？
-           ③ 和已有技能重复吗（重复就合并，不要新增）？
-
-     来源会话：{session} · 起始轮次 {start} · 抽于 {today}
-     信号：现象 {symptom} / 动作 {action} / 验证 {verify} · 打分 {score}（类别 {categories}/3）
--->
-
-# {title}
-
-## 问（用户原话）
-
-{questions}
-
-## 答（对话记录摘录 · 已脱敏）
-
-{answer}
-
-## 待提炼（四段式）
-
-- **现象**：TODO（报错原文 / 现象 / 复现步骤）
-- **根因**：TODO
-- **修复**：TODO（文件:行号）
-- **验证**：TODO（跑哪条命令 / 哪个测试）
-"""
 
 
 def cmd_from_chat(args: argparse.Namespace) -> int:
@@ -423,26 +259,8 @@ def cmd_from_chat(args: argparse.Namespace) -> int:
             print(f"  跳过（重复 {dup[0]} 相似 {dup[1]}）：{item['first_question'][:30]}")
             skipped_dup += 1
             continue
-        slug = _BAD_NAME_CHARS.sub("-", item["first_question"])[:40].strip(" -") or "对话片段"
-        out = _inbox() / f"chat-{item['session'][:14]}-{item['start']}-{slug}.md"
-        # 文件名要短，但 H1 是给人读的 —— 别把问题截断成"…结果每"
-        heading = item["first_question"] or "对话片段"
-        out.write_text(
-            CHAT_DRAFT_TEMPLATE.format(
-                session=item["session"],
-                start=item["start"],
-                today=today,
-                symptom=item["symptom"],
-                action=item["action"],
-                verify=item["verify"],
-                score=item["score"],
-                categories=item["categories"],
-                title=heading,
-                questions=scrub("\n".join(f"- {q}" for q in item["questions"] if q.strip())),
-                answer=scrub(item["answer"][:EXCERPT_LIMIT]),
-            ),
-            encoding="utf-8",
-        )
+        out = _inbox() / draft_filename(item)      # 命名与接口共用，保证两个入口同构
+        out.write_text(render_draft(item, today=today), encoding="utf-8")
         written += 1
         print(f"  写入 {out.name}")
     print(f"\n共写入 {written} 份草稿，跳过重复 {skipped_dup} 份；目录：{_inbox()}")

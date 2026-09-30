@@ -16,6 +16,10 @@ os.environ.setdefault("LOG_LEVEL", "CRITICAL")
 from app import config
 from app.context.history import ChatStore, HistoryTurn
 from app.skills import reset_skill_retriever, reset_skills
+# 规则本体在 app 层（接口与 CLI 共用），这里直接测规则；CLI 只测命令入口
+from app.skills.drafting import (
+    MAX_SEGMENT_TURNS, find_duplicate, is_candidate, score_segment, scrub, segments_from_turns,
+)
 from scripts import collect_experience as ce
 
 _SCRATCH = Path(__file__).parent / "_scratch"
@@ -62,7 +66,7 @@ BUSINESS_TURNS = [
 class ScrubTest(unittest.TestCase):
     def test_masks_keys_bearer_and_internal_ips(self):
         text = "用 sk-abcdef123456 调接口，Authorization: Bearer abcdef1234567890，内网 10.20.30.40"
-        out = ce.scrub(text)
+        out = scrub(text)
         self.assertNotIn("sk-abcdef123456", out)
         self.assertNotIn("abcdef1234567890", out)
         self.assertNotIn("10.20.30.40", out)
@@ -73,51 +77,51 @@ class ScrubTest(unittest.TestCase):
 class SegmentTest(unittest.TestCase):
     def test_new_segment_starts_on_symptom_turn(self):
         turns = GOOD_TURNS + [HistoryTurn(user="顺便问下天气", assistant="晴")]
-        segments = ce.segments_from_turns("s1", turns)
+        segments = segments_from_turns("s1", turns)
         # 第二条含现象词吗？不含 → 接在第一段后面；所以仍是 1 段
         self.assertEqual(len(segments), 1)
         self.assertEqual(segments[0]["start"], 1)
 
         turns2 = [HistoryTurn(user="你好", assistant="你好"), *GOOD_TURNS]
-        segments2 = ce.segments_from_turns("s2", turns2)
+        segments2 = segments_from_turns("s2", turns2)
         self.assertEqual(len(segments2), 2, "闲聊后遇到现象词应开新片段")
         self.assertEqual(segments2[1]["start"], 2)
 
     def test_segment_is_capped_by_max_turns(self):
         long_turns = [
-            HistoryTurn(user=f"报错 {i}", assistant="修复并验证") for i in range(ce.MAX_SEGMENT_TURNS + 3)
+            HistoryTurn(user=f"报错 {i}", assistant="修复并验证") for i in range(MAX_SEGMENT_TURNS + 3)
         ]
-        segments = ce.segments_from_turns("s3", long_turns)
-        self.assertTrue(all(len(s["turns"]) <= ce.MAX_SEGMENT_TURNS for s in segments))
+        segments = segments_from_turns("s3", long_turns)
+        self.assertTrue(all(len(s["turns"]) <= MAX_SEGMENT_TURNS for s in segments))
         self.assertGreater(len(segments), 1, "超长会话应被切成多段而不是一段到底")
 
 
 class ScoreTest(unittest.TestCase):
     def test_full_signal_triple_is_a_candidate(self):
-        item = ce.score_segment(ce.segments_from_turns("s", GOOD_TURNS)[0])
+        item = score_segment(segments_from_turns("s", GOOD_TURNS)[0])
         self.assertEqual(item["categories"], 3)
         self.assertTrue(item["symptom"] and item["action"] and item["verify"])
         self.assertGreaterEqual(item["score"], 6.0)
-        self.assertTrue(ce.is_candidate(item))
+        self.assertTrue(is_candidate(item))
 
     def test_business_session_is_rejected_even_with_symptom_words(self):
-        item = ce.score_segment(ce.segments_from_turns("s", BUSINESS_TURNS)[0])
+        item = score_segment(segments_from_turns("s", BUSINESS_TURNS)[0])
         self.assertTrue(item["symptom"], "构造的用例里确实有现象词")
         self.assertTrue(item["offtopic"], "但业务词表要命中")
-        self.assertFalse(ce.is_candidate(item), "业务问答不能变成开发经验")
+        self.assertFalse(is_candidate(item), "业务问答不能变成开发经验")
 
     def test_plain_question_without_symptom_is_not_a_candidate(self):
-        item = ce.score_segment(
-            ce.segments_from_turns("s", [HistoryTurn(user="加绒牛仔怎么洗", assistant="水温不超过30度")])[0]
+        item = score_segment(
+            segments_from_turns("s", [HistoryTurn(user="加绒牛仔怎么洗", assistant="水温不超过30度")])[0]
         )
         self.assertEqual(item["symptom"], [])
-        self.assertFalse(ce.is_candidate(item))
+        self.assertFalse(is_candidate(item))
 
 
 class DuplicateTest(unittest.TestCase):
     def test_similar_text_is_flagged(self):
         existing = {"skill:global-index-isolation": "向量索引 测试 覆盖 全局目录 隔离 stale 降级 chunk_count"}
-        dup = ce.find_duplicate(
+        dup = find_duplicate(
             "向量索引被测试覆盖了怎么办，为什么 stale",
             "向量索引被测试覆盖 全局目录 隔离 降级 chunk_count",
             existing,
@@ -128,7 +132,7 @@ class DuplicateTest(unittest.TestCase):
     def test_same_question_different_answer_is_still_flagged(self):
         """同一个坑问了多次、每次答案不同 —— 也必须算重复（实测漏判过这一种）。"""
         picked = {"本批#1": "跑测试把向量索引覆盖了怎么办，有经验吗 " + "这次回答写得比较长，细节不同。" * 20}
-        dup = ce.find_duplicate("跑测试把向量索引覆盖了怎么办，有经验吗", "另一段完全不同的回答", picked)
+        dup = find_duplicate("跑测试把向量索引覆盖了怎么办，有经验吗", "另一段完全不同的回答", picked)
         self.assertIsNotNone(dup, "问题相同就该判重，不能因为答案不同就放过")
         self.assertEqual(dup[0], "本批#1")
 

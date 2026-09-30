@@ -24,8 +24,9 @@ from app import config
 from app.api import (
     begin_request, handle_chat, handle_chat_plan, handle_chat_stream,
     handle_context, handle_feedback, handle_feedback_list, handle_health,
-    handle_ingest, handle_kb_delete, handle_kb_list, handle_skill_list,
-    handle_skill_sync, handle_stats, handle_upload,
+    handle_ingest, handle_kb_delete, handle_kb_list,
+    handle_skill_draft_archive, handle_skill_draft_from_chat, handle_skill_drafts,
+    handle_skill_list, handle_skill_sync, handle_stats, handle_upload,
     safe_call,
 )
 from app.errors import ErrorCode, error_from_exception, fail
@@ -188,6 +189,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/skills":
                 status, body = safe_call(handle_skill_list, self._query())
                 return self._send_json(status, body)
+            if path == "/api/skills/drafts":
+                status, body = safe_call(handle_skill_drafts)
+                return self._send_json(status, body)
             if path == "/api/feedback":
                 status, body = safe_call(handle_feedback_list, self._query())
                 return self._send_json(status, body)
@@ -216,6 +220,10 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/api/kb/"):
                 source = unquote(path[len("/api/kb/"):])
                 status, body = safe_call(handle_kb_delete, source)
+                return self._send_json(status, body)
+            if path.startswith("/api/skills/drafts/"):
+                name = unquote(path[len("/api/skills/drafts/"):])
+                status, body = safe_call(handle_skill_draft_archive, name)
                 return self._send_json(status, body)
             return self._send_json(404, fail(ErrorCode.NOT_FOUND, f"未知路径：{path}"))
         except Exception as exc:  # noqa: BLE001
@@ -247,6 +255,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json(status, body)
             if path == "/api/skills/sync":
                 status, body = safe_call(handle_skill_sync, payload)
+                return self._send_json(status, body)
+            if path == "/api/skills/draft-from-chat":
+                status, body = safe_call(handle_skill_draft_from_chat, payload)
                 return self._send_json(status, body)
             if path == "/api/feedback":
                 status, body = safe_call(handle_feedback, payload)
