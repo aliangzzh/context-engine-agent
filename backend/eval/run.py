@@ -54,6 +54,7 @@ from app.retrieval.retriever import Retriever  # noqa: E402
 from app.retrieval.vector_index import VectorIndex  # noqa: E402
 from app.storage.cache import get_cache  # noqa: E402
 from app.storage.repo import KbRepository  # noqa: E402
+from app.skills import get_skill_retriever  # noqa: E402
 
 EVAL_DIR = Path(__file__).resolve().parent
 CORPUS_DIR = EVAL_DIR / "corpus"
@@ -92,12 +93,14 @@ class Harness:
     """
 
     def __init__(self, *, strategy: str | None = None, retrieval: str | None = None,
-                 run_dir: Path = RUN_DIR) -> None:
+                 skills: bool | None = None, run_dir: Path = RUN_DIR) -> None:
         if run_dir.exists():
             shutil.rmtree(run_dir, ignore_errors=True)
         run_dir.mkdir(parents=True, exist_ok=True)
         self.run_dir = run_dir
         self.strategy = (strategy or config.CHUNK_STRATEGY).lower()
+        #: 技能（开发经验）这条路是否开启 —— A/B 对照用（带技能 vs 不带技能）
+        self.skills_enabled = config.SKILL_ENABLED if skills is None else bool(skills)
 
         self._orig_weather = tools_mod.TOOLS["get_weather"].func
         install_weather_stub()
@@ -112,6 +115,10 @@ class Harness:
         # 评测用**独立**索引目录：FAISS_PERSIST_DIR 是全局的，不隔离的话
         # 跑一次 --retrieval hybrid 就会把线上索引覆盖成评测语料的索引。
         self.retriever.vector = VectorIndex(index_dir=run_dir / "faiss")
+        # 技能语料也要锁到同一个后端：技能检索器是进程级单例、默认跟随 config，
+        # 本机配了 key + 装了 faiss 时它会走向量 —— 那就变成"真的调 embedding、
+        # 结果不确定且花钱"，与"评测必须确定性"冲突（这条在向量检索那版踩过）。
+        get_skill_retriever().backend = self.retrieval
         self.repo = KbRepository(db_path=run_dir)
         self.kb = KnowledgeBase(self.retriever, self.repo)
         self.corpus: list[dict] = []
@@ -144,7 +151,8 @@ class Harness:
             max_turns=config.HISTORY_MAX_TURNS,
             summary_tokens=config.HISTORY_SUMMARY_TOKENS,
         )
-        orch = AgentOrchestrator(self.retriever, self.model, history, self.engine)
+        orch = AgentOrchestrator(self.retriever, self.model, history, self.engine,
+                                 skills=self.skills_enabled)
         res = orch.generate(case["question"], session_id)
 
         plan = [p["name"] for p in orch.plan(case["question"]) if p["name"] != "writer"]
@@ -173,6 +181,10 @@ class Harness:
             "context_sources": context_sources,
             "answer": res.answer,
             "tool_text": " ".join(s["result"] for s in tool_steps),
+            # 技能（开发经验）：命中了哪些、约束有没有真的进模型输入
+            "skills": [s["name"] for s in getattr(res, "skills", [])],
+            "skill_slots": sum(1 for s in res.context.slots if s.kind == "skill"),
+            "prompt": res.messages[0]["content"] if res.messages else "",
         }
 
 
@@ -253,6 +265,25 @@ def score_case(case: dict, obs: dict) -> tuple[bool, str]:
                     problems.append("参数缺失但没有向用户追问参数")
         return not problems, "；".join(problems) if problems else "兜底行为符合预期"
 
+    if category == "skill":
+        # 正向题：该命中的技能必须命中，且它的约束要**真的进模型输入**（不是只进了面板）；
+        # 负向题（expect.skill 为空）：**一条都不许命中** —— 误命中的代价比漏命中大得多。
+        problems: list[str] = []
+        want = expect.get("skill")
+        got = obs.get("skills") or []
+        if want is None:
+            if got:
+                problems.append(f"不该命中技能，却命中了 {got}")
+        elif want not in got:
+            problems.append(f"期望命中技能 {want} / 实际 {got}")
+        prompt = obs.get("prompt", "")
+        missing = [k for k in expect.get("must_contain", []) if k not in prompt]
+        if missing:
+            problems.append(f"技能约束没进模型输入（缺少 {missing}）")
+        if not missing and want and want in got and not obs.get("skill_slots"):
+            problems.append("命中了技能但上下文里没有 skill 槽位")
+        return not problems, "；".join(problems) if problems else "技能命中，约束已注入上下文"
+
     return False, f"未知类别 {category}"
 
 
@@ -265,6 +296,10 @@ METRIC_KEYS = (
     "retrieval_mrr",
     "answer_grounding_accuracy",
     "guard_accuracy",
+    # 仅在跑技能题集（dataset_skill.json）时出现；开发集里没有这一类，会自动跳过
+    "skill_accuracy",
+    "skill_hit_rate",
+    "skill_false_positive_rate",
     "overall_pass_rate",
     "errors",
 )
@@ -294,6 +329,32 @@ def compute_metrics(results: list[dict]) -> dict:
         "guard_accuracy": accuracy("guard"),
         "overall_pass_rate": round(sum(1 for r in results if r["passed"]) / len(results), 4) if results else 0.0,
         "errors": sum(1 for r in results if r.get("error")),
+    } | _skill_metrics(rows("skill"))
+
+
+def _skill_metrics(skill_rows: list[dict]) -> dict:
+    """技能题集的三个指标（开发集没有这一类时返回空 dict，指标就不出现）。
+
+    * ``skill_accuracy``：这一类整体通过率（和不带技能对照时的主要数字）；
+    * ``skill_hit_rate``：**正向题**通过率（该命中的命中 + 约束进了上下文）；
+    * ``skill_false_positive_rate``：**负向题**里误命中的比例（越低越好，0 才是对的）。
+    """
+    if not skill_rows:
+        return {}
+    positives = [r for r in skill_rows if r["expect"].get("skill")]
+    negatives = [r for r in skill_rows if not r["expect"].get("skill")]
+
+    def rate(group: list[dict]) -> float:
+        return round(sum(1 for r in group if r["passed"]) / len(group), 4) if group else 0.0
+
+    # 误命中率按**实际命中**数算（不是"负向题没过"）：0.0 才是对的
+    false_positives = [r for r in negatives if r["signals"].get("skills")]
+    return {
+        "skill_accuracy": rate(skill_rows),
+        "skill_hit_rate": rate(positives),
+        "skill_false_positive_rate": (
+            round(len(false_positives) / len(negatives), 4) if negatives else 0.0
+        ),
     }
 
 
@@ -303,7 +364,8 @@ def load_dataset(path: Path | None = None) -> dict:
 
 
 def run_eval(*, strategy: str | None = None, category: str | None = None,
-             dataset_path: Path | None = None, retrieval: str | None = None) -> dict:
+             dataset_path: Path | None = None, retrieval: str | None = None,
+             skills: bool | None = None) -> dict:
     dataset_path = dataset_path or DATASET_PATH
     dataset = load_dataset(dataset_path)
     cases = dataset["cases"]
@@ -312,10 +374,12 @@ def run_eval(*, strategy: str | None = None, category: str | None = None,
         if not cases:
             raise SystemExit(f"没有这一类用例：{category}")
 
-    with Harness(strategy=strategy, retrieval=retrieval) as harness:
+    with Harness(strategy=strategy, retrieval=retrieval, skills=skills) as harness:
         results = _run_cases(harness, cases)
         env = {
-            "chat_backend": config.effective_chat_backend(),
+            # 报告里要写**实际生效**的后端，不是"配置层意愿"：评测台固定用 FakeModel，
+            # 本机就算配了 DASHSCOPE_API_KEY 也不是在用真模型（否则报告会自相矛盾）。
+            "chat_backend": getattr(harness.model, "name", "fake"),
             "retrieval_backend": self_backend(harness),
             "chunk_strategy": harness.strategy,
             "top_k": config.TOP_K,
@@ -323,6 +387,7 @@ def run_eval(*, strategy: str | None = None, category: str | None = None,
             "corpus_docs": len(harness.corpus),
             "corpus_chunks": sum(c.get("chunks", 0) for c in harness.corpus),
             "cases": len(results),
+            "skills": harness.skills_enabled,
         }
 
     metrics = compute_metrics(results)
@@ -365,6 +430,8 @@ def _run_cases(harness: Harness, cases: list[dict]) -> list[dict]:
                 "scores": obs["scores"],
                 "context_sources": obs["context_sources"],
                 "answer": obs["answer"],
+                "skills": obs.get("skills", []),
+                "skill_slots": obs.get("skill_slots", 0),
             }
         except Exception as exc:  # 单条用例炸了不能拖垮整轮评测
             record["error"] = f"{exc.__class__.__name__}: {exc}"
@@ -385,6 +452,7 @@ CATEGORY_TITLE = {
     "retrieval": "RAG 召回",
     "answer_grounding": "答案事实覆盖",
     "guard": "兜底与拒答",
+    "skill": "技能复用（开发经验）",
 }
 
 
@@ -419,7 +487,9 @@ def print_report(report: dict, *, verbose: bool = False) -> None:
 
     print("\n" + "-" * 78)
     for key in METRIC_KEYS:
-        value = report["metrics"][key]
+        value = report["metrics"].get(key)
+        if value is None:      # 该题集没有这一类指标（例如开发集没有技能题）
+            continue
         shown = f"{value:.4f}" if key != "errors" else str(value)
         print(f"  {key:<26} {shown}")
     print("-" * 78)
@@ -446,14 +516,48 @@ def save_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def print_skill_comparison(on: dict, off: dict) -> None:
+    """技能 A/B 对照：同一套题、只切换技能开关，逐指标并排。
+
+    这是"开发经验复用到底有没有用"的证据 —— 而不是"我做了个技能库"。
+    """
+    print("\n" + "=" * 78)
+    print("技能 A/B 对照（同一套题：带技能 vs 不带技能）")
+    print("=" * 78)
+    print(f"  {'指标':<28}{'带技能':>10}{'不带技能':>12}")
+
+    def fmt(key: str, value) -> str:
+        if value is None:
+            return "-"
+        return str(value) if key == "errors" else f"{value:.4f}"
+
+    for key in METRIC_KEYS:
+        a, b = on["metrics"].get(key), off["metrics"].get(key)
+        if a is None and b is None:
+            continue
+        print(f"  {key:<28}{fmt(key, a):>10}{fmt(key, b):>12}")
+
+    on_pass = {r["id"]: r["passed"] for r in on["results"]}
+    changed = [r["id"] for r in off["results"]
+               if r["id"] in on_pass and on_pass[r["id"]] != r["passed"]]
+    print(f"\n  行为发生变化的用例：{changed or '无'}")
+    for rid in changed:
+        row = next(r for r in off["results"] if r["id"] == rid)
+        print(f"    - {rid} {row['question']}：不带技能时 -> {row['reason']}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Agent 效果评测跑分器")
-    parser.add_argument("--category", help="只跑某一类：routing/tool_args/retrieval/answer_grounding/guard")
+    parser.add_argument("--category",
+                        help="只跑某一类：routing/tool_args/retrieval/answer_grounding/guard/skill")
     parser.add_argument("--dataset", default="dataset.json",
-                        help="题集文件：dataset.json（开发/回归集）或 dataset_holdout.json（留出集）")
+                        help="题集文件：dataset.json（开发/回归集）/ dataset_holdout*.json（留出集）/ "
+                             "dataset_skill.json（技能复用题集）")
     parser.add_argument("--strategy", help="覆盖切分策略：sentence|fixed（做消融对比）")
     parser.add_argument("--retrieval", default="bm25",
                         help="检索后端：bm25|dashscope|hybrid（默认 bm25，保证与冻结基线可比）")
+    parser.add_argument("--skills", choices=("on", "off", "both"), default="on",
+                        help="技能（开发经验）：on|off|both（both = 同一套题跑两遍并对照）")
     parser.add_argument("--verbose", action="store_true", help="连通过的用例也打印实际信号")
     parser.add_argument("--save-baseline", action="store_true", help="把本次指标写进 baseline.json")
     parser.add_argument("--check", action="store_true", help="与 baseline.json 对比，回退则返回非零")
@@ -464,8 +568,24 @@ def main(argv: list[str] | None = None) -> int:
     dataset_path = Path(args.dataset)
     if not dataset_path.is_absolute():
         dataset_path = EVAL_DIR / dataset_path
+
+    if args.skills == "both":
+        on = run_eval(strategy=args.strategy, category=args.category,
+                      dataset_path=dataset_path, retrieval=args.retrieval, skills=True)
+        off = run_eval(strategy=args.strategy, category=args.category,
+                       dataset_path=dataset_path, retrieval=args.retrieval, skills=False)
+        print_report(on, verbose=args.verbose)
+        print_skill_comparison(on, off)
+        stem = dataset_path.stem
+        save_json(REPORTS_DIR / f"latest-{stem}-skills-on.json", on)
+        save_json(REPORTS_DIR / f"latest-{stem}-skills-off.json", off)
+        if args.json_path:
+            save_json(Path(args.json_path), on)
+        return 0
+
     report = run_eval(strategy=args.strategy, category=args.category,
-                      dataset_path=dataset_path, retrieval=args.retrieval)
+                      dataset_path=dataset_path, retrieval=args.retrieval,
+                      skills={"on": True, "off": False}[args.skills])
     print_report(report, verbose=args.verbose)
 
     save_json(REPORTS_DIR / "latest.json", report)

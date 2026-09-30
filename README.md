@@ -11,6 +11,7 @@
 - **RAG + 知识库管理**：BM25 离线检索 / DashScope 向量检索；文档切分策略可切换（句边界 / 定长）；上传、分块列表分页搜索、删除全走 SQL。
 - **工具调用**：天气（真实免 key API）/ 计算器 / 时间；从自然语言里抽参数（抽不到就向用户追问），带失败重试与耗时统计。
 - **badcase 闭环**：对话页把回答标记为 badcase → 落 `feedback` 表 → 看板统计分布 → 补知识库 → 复测。
+- **开发经验复用（Skill）**：仓库根 `skills/` 里"一条技能 = 一个真实踩过的坑"（`SKILL.md` + `references/`），后端加载并同步进**独立**技能语料；Agent 命中后作为**行为约束**注入上下文（独立槽位 + 可解释 trace），也可通过 MCP 被外部编码 Agent 调用。A/B 实测：`skill_hit_rate` **0.000 → 1.000**（见 `docs/evaluation.md` §十）。
 - **模型后端可插拔**：`fake`（离线演示）/ `qwen_api`（通义千问 DashScope）/ `local_ft`（本地 LoRA 微调模型）。
 - **LoRA/QLoRA 微调**：`Qwen2.5` 领域微调管线 + 前后对比评测 + 导出合并模型。
 - **存储与缓存**：`turns` / `kb_chunks` / `feedback` 三张表（默认 SQLite，`DATABASE_URL` 可切 MySQL）+ 检索/聚合缓存（默认 LRU，`REDIS_URL` 可切 Redis），写操作走事务。
@@ -161,6 +162,9 @@ pip install ruff && ruff check backend       # Lint（同一份配置也在 CI �
 
 python -m eval.run                           # Agent 效果评测（30 题开发集）
 python -m eval.run --check                   # 与 baseline.json 比，回退则 exit 1
+python -m eval.run --dataset dataset_skill.json --skills both   # 技能复用 A/B（带技能 vs 不带技能）
+python -m scripts.collect_experience check   # 校验 skills/ 里的技能是否合规
+python -m scripts.collect_experience sync    # 把技能同步进检索语料（按 md5 幂等）
 
 cd ../frontend
 npm run typecheck                            # vue-tsc 类型检查
@@ -182,6 +186,7 @@ context-engine-agent/
 │   │   ├── retrieval/    # RAG 检索（BM25 / DashScope）+ 切分 + 知识库管理
 │   │   ├── storage/      # SQLite/MySQL 存储（历史/知识库/badcase）+ LRU/Redis 缓存
 │   │   ├── models/       # ③ 模型后端（fake / qwen_api / local_ft）
+│   │   ├── skills/       # ⑤ 开发经验技能（零依赖加载 / 匹配 / 独立语料）
 │   │   ├── errors.py     # 统一错误码与响应体
 │   │   ├── logging_config.py  # 结构化日志 + request_id
 │   │   ├── decorators.py # @timed / @retry / @cache_result
@@ -196,6 +201,7 @@ context-engine-agent/
 │   ├── eval/             # ⑤ 效果评测：独立语料 + 30 题题库 + 2 套留出集 + 回归门
 │   └── tests/            # 单元测试 + 接口测试 + 评测回归测试
 ├── frontend/             # ④ Vue3 + TS：对话 / 知识库 / 看板三页 + nginx.conf
+├── skills/               # ⑤ 开发经验技能：一条技能 = 一个真实踩过的坑（SKILL.md + references/）
 ├── .github/workflows/    # CI：lint + 测试 + 前端构建 + compose 校验
 ├── docker-compose.yml
 ├── ruff.toml / .editorconfig

@@ -44,6 +44,8 @@ jobs:
           echo "--- hold-out set (not a gate, records generalisation gaps) ---"
           python -m eval.run --dataset dataset_holdout.json || true
           python -m eval.run --dataset dataset_holdout2.json || true
+          echo "--- skill reuse A/B (not a gate: records the experience-reuse numbers) ---"
+          python -m eval.run --dataset dataset_skill.json --skills both || true
 
   frontend-build:
     name: Frontend build (type-check + Vite)
