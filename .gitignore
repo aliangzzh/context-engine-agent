@@ -45,3 +45,9 @@ Thumbs.db
 
 # 本地草稿与笔记（不进版本库）
 学习笔记/
+
+# 求职 / 简历素材（绝不进版本库）
+docs/resume-bullets.md
+docs/resume*.md
+*resume-bullets*
+*简历*

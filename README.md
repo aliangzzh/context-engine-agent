@@ -22,17 +22,17 @@
 
 ## 界面预览
 
-| 对话页：上下文分配 + Agent 协作链 | 运行看板：指标与分布 |
-|---|---|
-| <img src="docs/images/chat.png" width="470" alt="对话页：上下文分配与 Agent 协作链"> | <img src="docs/images/dashboard.png" width="470" alt="运行看板：指标与分布"> |
+<p><b>对话页</b>：SSE 流式回答 + 右侧实时显示 <b>Context Engine 上下文分配</b>（各槽位优先级与 token 用量）与 <b>Multi-Agent 协作链</b>（router / tool / retrieve / writer + trace）</p>
+<p><img src="docs/images/chat.png" width="100%" alt="对话页：上下文分配与 Agent 协作链"></p>
 
-知识库管理：文件上传 / 文本入库 / 分块列表分页搜索 / 按来源删除（同时清理 SQL 记录与检索索引）
+<p><b>知识库管理</b>：文件上传 / 文本入库 / 分块列表分页搜索 / 按来源删除（同时清理 SQL 记录与检索索引）</p>
+<p><img src="docs/images/kb.png" width="100%" alt="知识库管理"></p>
 
-<img src="docs/images/kb.png" width="900" alt="知识库管理">
+<p><b>开发经验技能库</b>：一条技能 = 一个真实踩过的坑（现象 / 根因 / 修复 / 验证），命中后作为<b>行为约束</b>注入上下文（独立槽位 + 可解释 trace）；正文真源是仓库里的 <code>skills/&lt;name&gt;/SKILL.md</code>，本页只读</p>
+<p><img src="docs/images/skills.png" width="100%" alt="开发经验技能库"></p>
 
-开发经验技能库：一条技能 = 一个真实踩过的坑（现象 / 根因 / 修复 / 验证），命中后作为**行为约束**注入上下文；正文真源是仓库里的 `skills/<name>/SKILL.md`，本页只读
-
-<img src="docs/images/skills.png" width="900" alt="开发经验技能库">
+<p><b>运行看板</b>：知识库分块 / badcase 分布 / 上下文 token 占用 / 工具调用次数 / 请求耗时（每 5 秒自动刷新）</p>
+<p><img src="docs/images/dashboard.png" width="100%" alt="运行看板：指标与分布"></p>
 
 ## 快速开始
 
