@@ -11,14 +11,28 @@
 - **RAG + 知识库管理**：BM25 离线检索 / DashScope 向量检索；文档切分策略可切换（句边界 / 定长）；上传、分块列表分页搜索、删除全走 SQL。
 - **工具调用**：天气（真实免 key API）/ 计算器 / 时间；从自然语言里抽参数（抽不到就向用户追问），带失败重试与耗时统计。
 - **badcase 闭环**：对话页把回答标记为 badcase → 落 `feedback` 表 → 看板统计分布 → 补知识库 → 复测。
-- **开发经验复用（Skill）**：仓库根 `skills/` 里"一条技能 = 一个真实踩过的坑"（`SKILL.md` + `references/`），后端加载并同步进**独立**技能语料；Agent 命中后作为**行为约束**注入上下文（独立槽位 + 可解释 trace），也可通过 MCP 被外部编码 Agent 调用。A/B 实测：`skill_hit_rate` **0.000 → 1.000**（见 `docs/evaluation.md` §十）。
-- **模型后端可插拔**：`fake`（离线演示）/ `qwen_api`（通义千问 DashScope）/ `local_ft`（本地 LoRA 微调模型）。
+- **开发经验复用（Skill）**：仓库根 `skills/` 里"一条技能 = 一个真实踩过的坑"（`SKILL.md` + `references/`），后端加载并同步进**独立**技能语料；Agent 命中后作为**行为约束**注入上下文（独立槽位 + 可解释 trace），也可通过 MCP 被外部编码 Agent 调用。A/B 实测：`skill_hit_rate` **0.000 → 1.000**（见 `docs/evaluation.md` §十）。经验**从对话沉淀**：命令行 `collect_experience from-chat` 或对话页「沉淀为经验」→ 落 `skills/_inbox/` 草稿（不进语料、不在 Git 里）→ 人工过三问后提升为正式技能。
+- **模型后端可插拔**：`fake`（离线演示）/ `qwen_api`（通义千问 DashScope）/ `deepseek_api`（DeepSeek，OpenAI 兼容、`requests` 直连**零新增依赖**）/ `local_ft`（本地 LoRA 微调模型）—— 一条配置 `CHAT_BACKEND` 切换；缺 key / 缺依赖时**自动降级并把原因暴露在 `/health`**（不静默失败）。
 - **LoRA/QLoRA 微调**：`Qwen2.5` 领域微调管线 + 前后对比评测 + 导出合并模型。
 - **存储与缓存**：`turns` / `kb_chunks` / `feedback` 三张表（默认 SQLite，`DATABASE_URL` 可切 MySQL）+ 检索/聚合缓存（默认 LRU，`REDIS_URL` 可切 Redis），写操作走事务。
 - **接口工程化**：统一响应体 `{code,msg,data}` + 分段错误码 + 结构化日志（request_id / 耗时）+ OpenAPI 文档 + 85+ 单元与接口测试。
 - **效果评测与回归门**：`backend/eval/` 自带 10 篇独立语料（含 4 篇干扰文档）+ 30 题五类题库（意图路由 / 工具参数 / RAG 召回 / 答案事实 / 兜底拒答）+ 2 套留出集；零依赖跑分器输出分类指标与逐条失败归因，`--check` 与冻结基线对比做 CI 回归门。真实消融数据见 `docs/evaluation.md`（总通过率 0.733 → 1.000）。
 - **前端三个页面**：对话（SSE 流式 + 上下文/Agent 面板）、知识库管理（上传 / 表单校验 / 列表分页 / 删除弹窗）、运行看板（图表）。离线环境用自研轻量组件，切换方案见 `docs/frontend.md`。
 - **部署**：Dockerfile × 2 + Nginx 反代（SSE 关缓冲）+ docker compose + GitHub Actions（lint / 测试 / 前端构建 / compose 校验）。
+
+## 界面预览
+
+| 对话页：上下文分配 + Agent 协作链 | 运行看板：指标与分布 |
+|---|---|
+| <img src="docs/images/chat.png" width="470" alt="对话页：上下文分配与 Agent 协作链"> | <img src="docs/images/dashboard.png" width="470" alt="运行看板：指标与分布"> |
+
+知识库管理：文件上传 / 文本入库 / 分块列表分页搜索 / 按来源删除（同时清理 SQL 记录与检索索引）
+
+<img src="docs/images/kb.png" width="900" alt="知识库管理">
+
+开发经验技能库：一条技能 = 一个真实踩过的坑（现象 / 根因 / 修复 / 验证），命中后作为**行为约束**注入上下文；正文真源是仓库里的 `skills/<name>/SKILL.md`，本页只读
+
+<img src="docs/images/skills.png" width="900" alt="开发经验技能库">
 
 ## 快速开始
 
