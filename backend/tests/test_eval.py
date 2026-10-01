@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).parents[1]))
 from app.agents.router import route
 from app.agents.tools import calculator, extract_args
 from app.context.rerank import content_terms, coverage, is_relevant
+from app.skills import get_skills
 from eval.run import BASELINE_PATH, CORPUS_DIR, DATASET_PATH, EVAL_DIR, compare, run_eval
 
 KNOWN_CATEGORIES = {"routing", "tool_args", "retrieval", "answer_grounding", "guard"}
@@ -125,6 +126,54 @@ class TestFixesLocked(unittest.TestCase):
         wrong = (CORPUS_DIR / "材质说明.txt").read_text(encoding="utf-8")
         question = "餐桌放在仓库哪个位置？"
         self.assertGreater(coverage(question, right), coverage(question, wrong))
+
+
+class TestSkillDatasetIntegrity(unittest.TestCase):
+    """技能题集（dataset_skill.json）：**独立于回归门**，但题集本身要合法。
+
+    特别要防的是"题集引用了不存在的技能" —— 那种情况下评测会一直失败，
+    但你会以为是技能没生效。
+    """
+
+    def setUp(self):
+        self.data = load_dataset("dataset_skill.json")
+        self.cases = self.data["cases"]
+
+    def test_shape_and_unique_ids(self):
+        self.assertGreaterEqual(len(self.cases), 8)
+        ids = [c["id"] for c in self.cases]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertEqual({c["category"] for c in self.cases}, {"skill"})
+
+    def test_every_case_has_note(self):
+        self.assertTrue(all(c.get("note") for c in self.cases))
+
+    def test_positive_cases_reference_existing_skills(self):
+        names = {s.name for s in get_skills(reload=True).skills}
+        self.assertTrue(names, "skills/ 下应该有技能")
+        for case in self.cases:
+            want = case["expect"].get("skill")
+            if want:
+                self.assertIn(want, names, f"{case['id']} 引用了不存在的技能：{want}")
+
+    def test_has_both_positive_and_negative_cases(self):
+        positives = [c for c in self.cases if c["expect"].get("skill")]
+        negatives = [c for c in self.cases if not c["expect"].get("skill")]
+        self.assertGreaterEqual(len(positives), 4, "正向题太少，测不出命中")
+        self.assertGreaterEqual(len(negatives), 2, "没有负向题就测不出误命中")
+        # 负向题的定义是"一条都不该命中"，不该带 must_contain
+        self.assertTrue(all(not c["expect"].get("must_contain") for c in negatives))
+
+    def test_must_contain_strings_exist_in_the_skill_body(self):
+        """must_contain 必须在技能正文里找得到，否则这条题永远失败（题集写错了）。"""
+        by_name = {s.name: s for s in get_skills(reload=True).skills}
+        for case in self.cases:
+            want = case["expect"].get("skill")
+            if not want:
+                continue
+            body = by_name[want].body
+            for needle in case["expect"].get("must_contain", []):
+                self.assertIn(needle, body, f"{case['id']} 的 must_contain 在 {want} 正文里不存在：{needle}")
 
 
 if __name__ == "__main__":

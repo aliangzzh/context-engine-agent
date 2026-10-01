@@ -38,7 +38,7 @@ class HistoryTurn(BaseModel):
 class ContextSlot(BaseModel):
     """One allocated slice of the context window with its priority."""
 
-    kind: Literal["system", "summary", "retrieval", "history", "tool"]
+    kind: Literal["system", "summary", "retrieval", "history", "tool", "skill"]
     content: str
     priority: int = Field(default=0, description="Higher wins when trimming")
     tokens: int = 0
@@ -67,6 +67,8 @@ class ChatReply(BaseModel):
     context: Context
     agent_trace: list[dict[str, Any]] = Field(default_factory=list)
     used_tools: list[str] = Field(default_factory=list)
+    #: 命中的开发经验技能（name/hits/score/path）—— 前端与评测都读它
+    skills: list[dict[str, Any]] = Field(default_factory=list)
     backend: str = "fake"
     tokens_requested: int = 0
     tokens_generated: int = 0
@@ -78,8 +80,22 @@ class Health(BaseModel):
     chat_backend: str
     retrieval_backend: str
     model: str = ""
+    #: 配置的对话后端没起来时的一行原因（空串 = 正常）。
+    #: 为什么要有它：只填 key 不装依赖会**静默退回离线模型**，界面上只看得到
+    #: chat_backend=qwen_api，必须有个字段能把原因说清楚（同 vector_index 的 missing_deps）。
+    chat_degraded_reason: str = ""
     db_backend: str = ""      # sqlite | mysql
     cache_backend: str = ""   # lru | redis
+    #: 运行时**实际生效**的检索后端。索引不可用/与语料不一致时会降级成 bm25。
+    #: 只看 retrieval_backend（配置层意愿）会被误导——排查请以本字段为准。
+    retrieval_effective: str = ""
+    #: 向量索引状态摘要：status / chunk_count / built_at / last_degrade
+    vector_index: dict = Field(default_factory=dict)
+    #: 运行时环境：python 解释器路径 / 版本。
+    #: 为什么值得暴露：依赖缺失最常见的根因是"跑的不是你以为的那个解释器"，
+    #: 而 /health 只报 unavailable 时只能靠猜（这次就被坑了一轮）。
+    #: 注意：这会把本机路径暴露给调用方——面向公网时应只在 DEBUG 下返回。
+    runtime: dict = Field(default_factory=dict)
 
 
 class IngestResult(BaseModel):

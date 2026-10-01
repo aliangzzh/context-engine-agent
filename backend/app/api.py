@@ -102,6 +102,51 @@ def handle_kb_delete(source: str) -> tuple[int, dict]:
     return 200, ok(result)
 
 
+def handle_skill_list(query: dict) -> tuple[int, dict]:
+    """技能库列表（含语料状态与格式错误的文件）。``reload=1`` 时重新读盘。"""
+    reload = str(query.get("reload", "")).lower() in ("1", "true", "yes")
+    return 200, ok(services().skills(reload=reload))
+
+
+def handle_skill_sync(payload: dict) -> tuple[int, dict]:
+    """重新同步技能语料（md5 幂等；页面上"重新同步"按钮走这里）。"""
+    return 200, ok(services().sync_skills())
+
+
+def handle_skill_drafts() -> tuple[int, dict]:
+    """草稿区列表（直接读盘：草稿不进语料，也不受技能缓存影响，所以永远是最新的）。"""
+    from .skills import drafts as skill_drafts
+
+    return 200, ok(skill_drafts.list_drafts())
+
+
+def handle_skill_draft_archive(name: str) -> tuple[int, dict]:
+    """移除一份草稿 —— 是**归档**（移到 `_inbox/_trash/`），不是真删。
+
+    草稿不在 Git 里（.gitignore），删了就真没了；"移除"这个动作应该可后悔。
+    """
+    from .skills import drafts as skill_drafts
+
+    if not name:
+        raise AppError(ErrorCode.VALIDATION_ERROR, "缺少草稿名")
+    return 200, ok(skill_drafts.archive_draft(name))
+
+
+def handle_skill_draft_from_chat(payload: dict) -> tuple[int, dict]:
+    """把对话里的某一轮（所在的**整个事件片段**）沉淀成草稿。
+
+    这是人工显式信号（优先级高于一切自动判断），所以不再用候选规则过滤；
+    但仍然查重：同一个坑点两次不会产生两份草稿。
+    """
+    from .skills import drafts as skill_drafts
+
+    return 200, ok(skill_drafts.create_from_chat(
+        str(payload.get("session_id") or ""),
+        int(payload.get("turn_index") or 0),
+        str(payload.get("expected_user") or ""),
+    ))
+
+
 def handle_feedback(payload: dict) -> tuple[int, dict]:
     req = FeedbackRequest(**payload)
     row = services().add_feedback(req.session_id, req.message, req.answer, req.reason, req.note)
@@ -152,6 +197,8 @@ __all__ = [
     "Any", "AppError", "ChatReply", "Health", "IngestResult",
     "begin_request", "handle_chat", "handle_chat_plan", "handle_chat_stream",
     "handle_context", "handle_feedback", "handle_feedback_list", "handle_health",
-    "handle_ingest", "handle_kb_delete", "handle_kb_list", "handle_stats",
+    "handle_ingest", "handle_kb_delete", "handle_kb_list",
+    "handle_skill_draft_archive", "handle_skill_draft_from_chat", "handle_skill_drafts",
+    "handle_skill_list", "handle_skill_sync", "handle_stats",
     "handle_upload", "reset_services", "safe_call", "services",
 ]

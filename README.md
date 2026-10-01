@@ -11,13 +11,28 @@
 - **RAG + 知识库管理**：BM25 离线检索 / DashScope 向量检索；文档切分策略可切换（句边界 / 定长）；上传、分块列表分页搜索、删除全走 SQL。
 - **工具调用**：天气（真实免 key API）/ 计算器 / 时间；从自然语言里抽参数（抽不到就向用户追问），带失败重试与耗时统计。
 - **badcase 闭环**：对话页把回答标记为 badcase → 落 `feedback` 表 → 看板统计分布 → 补知识库 → 复测。
-- **模型后端可插拔**：`fake`（离线演示）/ `qwen_api`（通义千问 DashScope）/ `local_ft`（本地 LoRA 微调模型）。
+- **开发经验复用（Skill）**：仓库根 `skills/` 里"一条技能 = 一个真实踩过的坑"（`SKILL.md` + `references/`），后端加载并同步进**独立**技能语料；Agent 命中后作为**行为约束**注入上下文（独立槽位 + 可解释 trace），也可通过 MCP 被外部编码 Agent 调用。A/B 实测：`skill_hit_rate` **0.000 → 1.000**（见 `docs/evaluation.md` §十）。经验**从对话沉淀**：命令行 `collect_experience from-chat` 或对话页「沉淀为经验」→ 落 `skills/_inbox/` 草稿（不进语料、不在 Git 里）→ 人工过三问后提升为正式技能。
+- **模型后端可插拔**：`fake`（离线演示）/ `qwen_api`（通义千问 DashScope）/ `deepseek_api`（DeepSeek，OpenAI 兼容、`requests` 直连**零新增依赖**）/ `local_ft`（本地 LoRA 微调模型）—— 一条配置 `CHAT_BACKEND` 切换；缺 key / 缺依赖时**自动降级并把原因暴露在 `/health`**（不静默失败）。
 - **LoRA/QLoRA 微调**：`Qwen2.5` 领域微调管线 + 前后对比评测 + 导出合并模型。
 - **存储与缓存**：`turns` / `kb_chunks` / `feedback` 三张表（默认 SQLite，`DATABASE_URL` 可切 MySQL）+ 检索/聚合缓存（默认 LRU，`REDIS_URL` 可切 Redis），写操作走事务。
 - **接口工程化**：统一响应体 `{code,msg,data}` + 分段错误码 + 结构化日志（request_id / 耗时）+ OpenAPI 文档 + 85+ 单元与接口测试。
 - **效果评测与回归门**：`backend/eval/` 自带 10 篇独立语料（含 4 篇干扰文档）+ 30 题五类题库（意图路由 / 工具参数 / RAG 召回 / 答案事实 / 兜底拒答）+ 2 套留出集；零依赖跑分器输出分类指标与逐条失败归因，`--check` 与冻结基线对比做 CI 回归门。真实消融数据见 `docs/evaluation.md`（总通过率 0.733 → 1.000）。
 - **前端三个页面**：对话（SSE 流式 + 上下文/Agent 面板）、知识库管理（上传 / 表单校验 / 列表分页 / 删除弹窗）、运行看板（图表）。离线环境用自研轻量组件，切换方案见 `docs/frontend.md`。
 - **部署**：Dockerfile × 2 + Nginx 反代（SSE 关缓冲）+ docker compose + GitHub Actions（lint / 测试 / 前端构建 / compose 校验）。
+
+## 界面预览
+
+<p><b>对话页</b>：SSE 流式回答 + 右侧实时显示 <b>Context Engine 上下文分配</b>（各槽位优先级与 token 用量）与 <b>Multi-Agent 协作链</b>（router / tool / retrieve / writer + trace）</p>
+<p><img src="docs/images/chat.png" width="100%" alt="对话页：上下文分配与 Agent 协作链"></p>
+
+<p><b>知识库管理</b>：文件上传 / 文本入库 / 分块列表分页搜索 / 按来源删除（同时清理 SQL 记录与检索索引）</p>
+<p><img src="docs/images/kb.png" width="100%" alt="知识库管理"></p>
+
+<p><b>开发经验技能库</b>：一条技能 = 一个真实踩过的坑（现象 / 根因 / 修复 / 验证），命中后作为<b>行为约束</b>注入上下文（独立槽位 + 可解释 trace）；正文真源是仓库里的 <code>skills/&lt;name&gt;/SKILL.md</code>，本页只读</p>
+<p><img src="docs/images/skills.png" width="100%" alt="开发经验技能库"></p>
+
+<p><b>运行看板</b>：知识库分块 / badcase 分布 / 上下文 token 占用 / 工具调用次数 / 请求耗时（每 5 秒自动刷新）</p>
+<p><img src="docs/images/dashboard.png" width="100%" alt="运行看板：指标与分布"></p>
 
 ## 快速开始
 
@@ -65,7 +80,7 @@ npm install
 npm run dev              # http://localhost:5173
 ```
 
-页面：`#/` 对话 · `#/kb` 知识库管理 · `#/dashboard` 运行看板。
+页面：`#/` 对话 · `#/kb` 知识库管理 · `#/skills` 技能库 · `#/dashboard` 运行看板。
 接口没就绪时可以打开右上角 **Mock 数据** 开关，用假数据把页面流程跑通。
 
 ### 3. 微调（可选，需 GPU）
@@ -144,6 +159,11 @@ docker compose up --build
 | POST | `/api/kb/upload` | **文件上传入库**（multipart/form-data，自研解析，免 `python-multipart`） |
 | GET | `/api/kb/list?page&size&q` | 知识库列表（SQL 分页 + 搜索） |
 | DELETE | `/api/kb/{source}` | 按来源删除（同时清检索索引与 md5 指纹） |
+| GET | `/api/skills` | 技能库列表（含语料状态与格式有问题的文件；`?reload=1` 重新读盘） |
+| POST | `/api/skills/sync` | 重新同步技能语料（md5 幂等；页面「重新同步」走这里） |
+| GET | `/api/skills/drafts` | 草稿区列表（`skills/_inbox/`，含来源与"是否与已有技能重复"提示） |
+| DELETE | `/api/skills/drafts/{name}` | 移除草稿 → **归档**到 `_inbox/_trash/`（不是真删，草稿不在 Git 里） |
+| POST | `/api/skills/draft-from-chat` | 把某一轮所在的**事件片段**沉淀成草稿（页面「沉淀为经验」；**按提问文本定位那一轮**、不依赖页面索引，重复返回 200 + `duplicate`，找不到该提问返回 404） |
 | POST | `/api/feedback` | 提交 badcase |
 | GET | `/api/feedback?page&size` | badcase 列表 |
 | GET | `/api/context/{session_id}` | 会话历史（上下文面板用） |
@@ -161,6 +181,9 @@ pip install ruff && ruff check backend       # Lint（同一份配置也在 CI �
 
 python -m eval.run                           # Agent 效果评测（30 题开发集）
 python -m eval.run --check                   # 与 baseline.json 比，回退则 exit 1
+python -m eval.run --dataset dataset_skill.json --skills both   # 技能复用 A/B（带技能 vs 不带技能）
+python -m scripts.collect_experience check   # 校验 skills/ 里的技能是否合规
+python -m scripts.collect_experience sync    # 把技能同步进检索语料（按 md5 幂等）
 
 cd ../frontend
 npm run typecheck                            # vue-tsc 类型检查
@@ -182,6 +205,7 @@ context-engine-agent/
 │   │   ├── retrieval/    # RAG 检索（BM25 / DashScope）+ 切分 + 知识库管理
 │   │   ├── storage/      # SQLite/MySQL 存储（历史/知识库/badcase）+ LRU/Redis 缓存
 │   │   ├── models/       # ③ 模型后端（fake / qwen_api / local_ft）
+│   │   ├── skills/       # ⑤ 开发经验技能（零依赖加载 / 匹配 / 独立语料）
 │   │   ├── errors.py     # 统一错误码与响应体
 │   │   ├── logging_config.py  # 结构化日志 + request_id
 │   │   ├── decorators.py # @timed / @retry / @cache_result
@@ -196,6 +220,7 @@ context-engine-agent/
 │   ├── eval/             # ⑤ 效果评测：独立语料 + 30 题题库 + 2 套留出集 + 回归门
 │   └── tests/            # 单元测试 + 接口测试 + 评测回归测试
 ├── frontend/             # ④ Vue3 + TS：对话 / 知识库 / 看板三页 + nginx.conf
+├── skills/               # ⑤ 开发经验技能：一条技能 = 一个真实踩过的坑（SKILL.md + references/）
 ├── .github/workflows/    # CI：lint + 测试 + 前端构建 + compose 校验
 ├── docker-compose.yml
 ├── ruff.toml / .editorconfig
@@ -229,4 +254,6 @@ context-engine-agent/
 2. **MySQL / Redis** 是配置驱动的可选外部服务，代码路径（方言、`AUTO_INCREMENT`、`ex=ttl`）已写好，但**尚未在真实 MySQL / Redis 上实测**，上线前需要实测。
 3. **前端**组件库 / 路由 / 图表是离线环境下的自研轻量实现，切换到主流方案的步骤写在 `docs/frontend.md`。
 4. **评测**的口径与阈值边界：相关性门控阈值在开发集上标定（`RELEVANCE_MIN_COVERAGE=0.35`），换语料需重新标定；留出集里的边界争议项（`现在北京时间几点？` 被判为工具+检索）如实记录在 `docs/evaluation.md`，没有为它继续调参。
-4. `npm run lint` 需要先自行安装 eslint（离线环境默认未装，见 `eslint.config.js` 头部说明）。
+5. `npm run lint` 需要先自行安装 eslint（离线环境默认未装，见 `eslint.config.js` 头部说明）。
+6. **没有鉴权体系**：接口都是本机开发用途。破坏性接口（`DELETE /api/kb/{source}`、`DELETE /api/skills/drafts/{name}`）
+   若将来部署到公网，**必须先加认证**，否则任何人都能删知识源或草稿。

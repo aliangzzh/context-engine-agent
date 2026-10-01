@@ -22,6 +22,7 @@ from ..errors import AppError, ErrorCode
 from ..models.base import ModelBackend
 from ..retrieval.retriever import Retriever
 from ..schemas import Context
+from ..skills import get_skills, select_skills
 from .router import route
 from .tools import extract_args, get_tool, tool_descriptions
 from .trace import Trace
@@ -56,6 +57,8 @@ class RunResult:
     used_tools: list[str]
     messages: list[dict] = field(default_factory=list)
     session_id: str = "default"
+    #: 命中的技能摘要（name/hits/score/path），给 trace、评测与前端用
+    skills: list[dict] = field(default_factory=list)
 
 
 # --- orchestrator ----------------------------------------------------------------
@@ -77,12 +80,16 @@ class AgentOrchestrator:
         history: HistoryManager,
         context_engine: ContextEngine,
         middleware: Optional[Middleware] = None,
+        skills: Optional[bool] = None,
     ):
         self.retriever = retriever
         self.model = model
         self.history = history
         self.engine = context_engine
         self.middleware = middleware or Middleware()
+        #: 是否启用「技能（开发经验）」这条路。None -> 跟随配置。
+        #: 显式参数是给评测做 A/B（带技能 / 不带技能）用的 —— 评测不该去改全局配置。
+        self.skills_enabled = config.SKILL_ENABLED if skills is None else bool(skills)
 
     def _route_steps(self, user_input: str) -> list[str]:
         """路由时判断"知识库是否真的覆盖这个问题"。
@@ -106,6 +113,8 @@ class AgentOrchestrator:
     def _describe_step(step: str) -> str:
         if step == "retrieve":
             return "检索 Agent：从知识库检索相关上下文"
+        if step == "skill":
+            return "技能 Agent：加载相关开发经验（Skill）"
         if step == "direct":
             return "直接进入写作 Agent"
         if step.startswith("tool:"):
@@ -119,13 +128,21 @@ class AgentOrchestrator:
             return "没能从提问里识别出城市名，请补充城市（例如：北京今天天气怎么样）"
         if name == "calculator":
             return "没能识别出算式，请给出具体表达式（例如：计算 12*34+5）"
+        if name == "search_skill":
+            return "没能识别出要检索的经验关键词，请补充（例如：工具参数怎么抽）"
         return f"工具 {name} 缺少必要参数"
 
     def prepare(self, user_input: str, session_id: str = "default") -> RunResult:
         """Run the routing/retrieval/tool nodes and build the model messages."""
         self.middleware.before_run(user_input)
         trace = Trace()
-        state: dict = {"user_input": user_input, "retrieved": [], "tool_results": []}
+        state: dict = {
+            "user_input": user_input,
+            "retrieved": [],
+            "tool_results": [],
+            "skills": [],
+            "skill_matches": [],
+        }
 
         steps = self._route_steps(user_input)
         trace.add("router", "router", "路由判定", {"plan": steps, "tools": tool_descriptions()})
@@ -167,6 +184,31 @@ class AgentOrchestrator:
                 trace.add("tool", "tool", f"调用工具 {name}",
                           {"args": args, "result": result[:120]})
                 self.middleware.after_node("tool", state)
+            elif step == "skill":
+                # 技能节点：**行为约束**（怎么做事），与 retrieve（事实）分开走各自的槽位。
+                # 判定顺序固定在 skills/store.select_skills；trace 里留下"为什么加载它"，
+                # 出问题时能看出是"没命中"还是"被门控挡了"。
+                self.middleware.before_node("skill", state)
+                if not self.skills_enabled:
+                    trace.add("skill", "skill", "技能已关闭（skills=False / SKILL_ENABLED=0）", {})
+                else:
+                    loaded = get_skills()
+                    matches, chunks = select_skills(user_input, loaded.skills)
+                    state["skills"] = chunks
+                    state["skill_matches"] = [
+                        {"name": m.skill.name, "hits": m.hits, "score": m.score, "path": m.skill.path}
+                        for m in matches
+                    ]
+                    trace.add(
+                        "skill", "skill",
+                        f"技能命中 {len(matches)} 条，注入上下文 {len(chunks)} 条",
+                        {
+                            "matches": state["skill_matches"],
+                            "injected": [str(c.source) for c in chunks],
+                            "skipped_files": [s["path"] for s in loaded.skipped],
+                        },
+                    )
+                self.middleware.after_node("skill", state)
             elif step == "direct":
                 trace.add("direct", "router", "无需检索/工具", {})
 
@@ -179,6 +221,7 @@ class AgentOrchestrator:
             history=history_turns,
             system_prompt=system_prompt,
             tool_results=state["tool_results"],
+            skills=state["skills"],
         )
         messages = self.engine.render_messages(ctx, user_input)
 
@@ -192,6 +235,7 @@ class AgentOrchestrator:
             used_tools=[t for t in state["tool_results"]],
             messages=messages,
             session_id=session_id,
+            skills=state["skill_matches"],
         )
         return res
 
@@ -235,6 +279,7 @@ class AgentOrchestrator:
                 "context": res.context.model_dump(),
                 "trace": res.trace.to_list(),
                 "used_tools": res.used_tools,
+                "skills": res.skills,
                 "backend": self.model.name,
             },
         }

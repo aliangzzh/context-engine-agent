@@ -15,6 +15,7 @@ const kindLabels: Record<string, string> = {
   retrieval: '检索上下文',
   history: '对话历史',
   tool: '工具结果',
+  skill: '技能（开发经验）',
 }
 </script>
 
@@ -78,6 +79,7 @@ h3 { margin: 0 0 4px; font-size: 15px; color: var(--accent); }
 .tag.t-history { background: #3a2a55; color: #c9a9ff; }
 .tag.t-summary { background: #553a2a; color: #ffc9a9; }
 .tag.t-tool { background: #2f5542; color: #a9ffcb; }
+.tag.t-skill { background: #3b2f5e; color: #d5c2ff; }
 .prio { color: var(--muted); }
 .tok { color: var(--muted); }
 .slot-body { font-size: 12px; line-height: 1.5; color: #cfd6ee; max-height: 60px; overflow: hidden; }

@@ -24,11 +24,14 @@ from app import config
 from app.api import (
     begin_request, handle_chat, handle_chat_plan, handle_chat_stream,
     handle_context, handle_feedback, handle_feedback_list, handle_health,
-    handle_ingest, handle_kb_delete, handle_kb_list, handle_stats, handle_upload,
+    handle_ingest, handle_kb_delete, handle_kb_list,
+    handle_skill_draft_archive, handle_skill_draft_from_chat, handle_skill_drafts,
+    handle_skill_list, handle_skill_sync, handle_stats, handle_upload,
     safe_call,
 )
 from app.errors import ErrorCode, error_from_exception, fail
 from app.logging_config import get_logger, setup_logging
+from app.models import degrade_notice, probe_degrade
 from app.multipart import MAX_UPLOAD_BYTES
 
 logger = get_logger("app.server")
@@ -183,6 +186,12 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/kb/list":
                 status, body = safe_call(handle_kb_list, self._query())
                 return self._send_json(status, body)
+            if path == "/api/skills":
+                status, body = safe_call(handle_skill_list, self._query())
+                return self._send_json(status, body)
+            if path == "/api/skills/drafts":
+                status, body = safe_call(handle_skill_drafts)
+                return self._send_json(status, body)
             if path == "/api/feedback":
                 status, body = safe_call(handle_feedback_list, self._query())
                 return self._send_json(status, body)
@@ -212,6 +221,10 @@ class Handler(BaseHTTPRequestHandler):
                 source = unquote(path[len("/api/kb/"):])
                 status, body = safe_call(handle_kb_delete, source)
                 return self._send_json(status, body)
+            if path.startswith("/api/skills/drafts/"):
+                name = unquote(path[len("/api/skills/drafts/"):])
+                status, body = safe_call(handle_skill_draft_archive, name)
+                return self._send_json(status, body)
             return self._send_json(404, fail(ErrorCode.NOT_FOUND, f"未知路径：{path}"))
         except Exception as exc:  # noqa: BLE001
             return self._send_error(exc)
@@ -240,6 +253,12 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/kb/ingest":
                 status, body = safe_call(handle_ingest, payload)
                 return self._send_json(status, body)
+            if path == "/api/skills/sync":
+                status, body = safe_call(handle_skill_sync, payload)
+                return self._send_json(status, body)
+            if path == "/api/skills/draft-from-chat":
+                status, body = safe_call(handle_skill_draft_from_chat, payload)
+                return self._send_json(status, body)
             if path == "/api/feedback":
                 status, body = safe_call(handle_feedback, payload)
                 return self._send_json(status, body)
@@ -259,6 +278,12 @@ def main():
     print(f"Context Engine server running at http://localhost:{config.APP_PORT}")
     print(f"  UI:      http://localhost:{config.APP_PORT}/")
     print(f"  health:  http://localhost:{config.APP_PORT}/health")
+    # "配了 key 但依赖没装 → 静默退回离线模型"必须在启动时就喊出来：
+    # 否则界面徽章写着 qwen_api、回答却全是【离线演示】，只能靠猜（踩过一次）。
+    probe_degrade()
+    notice = degrade_notice()
+    if notice:
+        print("\n" + notice + "\n")
     srv.serve_forever()
 
 

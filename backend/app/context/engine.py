@@ -53,6 +53,7 @@ class ContextEngine:
         system_prompt: str,
         tool_results: Optional[list[str]] = None,
         include_summary: bool = True,
+        skills: Optional[list[RetrievedChunk]] = None,
     ) -> Context:
         tool_results = tool_results or []
 
@@ -67,6 +68,16 @@ class ContextEngine:
             # 优先级 30：高于 history(25)、低于 tool(60)。
             # 理由：摘要是压缩过的，单位 token 的信息密度比未压缩的历史更高。
             slots.append(self._slot("summary", f"（对话摘要：{summary_text}）", priority=30))
+
+        # 技能（开发经验）槽：优先级默认 115 —— **高于检索**（rerank 给检索的最高 110），
+        # 低于它被裁的顺序：tool(60) / summary(30) / history(25) / retrieval(≤110) 先走。
+        # 理由：技能讲的是"怎么做事"，是行为约束；检索只是"依据什么"。规则丢了模型可能
+        # 答错方向，资料丢了只是少一个引用。system 槽另有 PROTECTED_KINDS 兜底，不参与竞争。
+        # 它**不**进 PROTECTED_KINDS：真被裁掉时由 over_budget / trimmed 如实上报，不静默。
+        for chunk in skills or []:
+            name = str(chunk.source).replace("skill:", "") or "技能"
+            slots.append(self._slot("skill", f"【技能：{name}】\n{chunk.text}",
+                                    priority=config.SKILL_SLOT_PRIORITY))
 
         if tool_results:
             slots.append(self._slot("tool", "工具返回结果：\n" + self._render_tool_results(tool_results), priority=60))
@@ -122,6 +133,10 @@ class ContextEngine:
             elif s.kind == "history":
                 system_parts.append(s.content)
             elif s.kind == "tool":
+                system_parts.append(s.content)
+            elif s.kind == "skill":
+                # 这个分支不能漏：elif 链没有 else，新 kind 不写在这里会被**静默丢弃**
+                # （只在上下文面板看得见、根本不进 prompt）—— 有测试盯着这条。
                 system_parts.append(s.content)
         system_text = "\n".join(p for p in system_parts if p)
         return [{"role": "system", "content": system_text}, {"role": "user", "content": user_input}]

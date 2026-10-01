@@ -20,8 +20,12 @@ from .retriever import get_retriever
 
 logger = get_logger("app.retrieval.knowledge")
 
-#: 文档解析支持的纯文本类型
-_TEXT_SUFFIXES = {".txt", ".md", ".markdown", ".csv", ".json", ".log"}
+#: 文档解析支持的纯文本类型。
+#:
+#: 含 ``.py``（代码知识库场景）。**代码不需要换切分策略**：``_SENT_SPLIT`` 把
+#: 换行也当作边界，而代码的自然边界就是行 —— 按行切分能保住完整标识符；
+#: 换成定长滑窗反而会把 ``_search_uncached`` 这类标识符从中间劈开。
+_TEXT_SUFFIXES = {".txt", ".md", ".markdown", ".csv", ".json", ".log", ".py"}
 
 _SENT_SPLIT = re.compile(r"(?<=[。！？!?；;\n])")
 
@@ -114,13 +118,40 @@ class KnowledgeBase:
             chunks = _chunk(text)
 
         meta = {"source": source, "create_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-        self.retriever.add_chunks(chunks, [dict(meta) for _ in chunks])
+        metas = [dict(meta) for _ in chunks]
+        self.retriever.add_chunks(chunks, metas)
         self.repo.add_chunks(source, chunks, md5)
         self._sync_md5_file()
+        self._sync_vector(chunks, metas)
 
         log(logger, 20, "kb.ingested", source=source, chunks=len(chunks),
             chars=len(text), chunk_ms=round(tb.ms, 1))
         return {"status": "ingested", "chunks": len(chunks), "filename": source}
+
+    # -- 向量索引同步（可选增强：失败绝不能影响入库） ---------------------------------
+    def _sync_vector(self, chunks: list[str], metas: list[dict]) -> None:
+        """把新分块增量同步进向量索引。
+
+        **失败不影响入库**：写失败会让索引指纹与语料失配，下一次检索判定
+        ``STALE`` 并自动降级 BM25 —— 宁可暂时退回关键词检索，也不返回过期结果。
+        """
+        try:
+            if not self.retriever.sync_vector_index(chunks, metas):
+                log(logger, 30, "vector.sync_skipped", chunks=len(chunks))
+        except Exception as exc:  # 向量是可选增强，绝不能让入库失败
+            log(logger, 30, "vector.sync_failed", error=exc.__class__.__name__)
+
+    def _rebuild_vector_after_delete(self) -> None:
+        """删除文档后重建索引。
+
+        就算不重建也不会返回"幽灵结果"——语料变了指纹就失配，检索会判定 STALE
+        并降级 BM25。重建只是让向量那一路继续可用（FAISS 删除要自己维护 id 映射，
+        全量重建更简单可靠，而删除本来就不频繁）。
+        """
+        try:
+            self.retriever.rebuild_vector_index()
+        except Exception as exc:
+            log(logger, 30, "vector.rebuild_after_delete_failed", error=exc.__class__.__name__)
 
     def ingest_file(self, path: Path, source: str = "") -> dict:
         path = Path(path)
@@ -159,6 +190,7 @@ class KnowledgeBase:
         removed_rows = self.repo.delete_source(source)
         removed_chunks = self.retriever.remove_source(source)
         self._sync_md5_file()
+        self._rebuild_vector_after_delete()
         log(logger, 20, "kb.deleted", source=source, rows=removed_rows, chunks=removed_chunks)
         return {"source": source, "deleted_chunks": removed_chunks, "deleted_rows": removed_rows}
 

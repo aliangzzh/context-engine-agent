@@ -58,10 +58,22 @@ class _IsolatedServices(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = _scratch_dir()
-        cls._orig = {k: getattr(config, k) for k in ("DATA_DIR", "KB_DIR", "DB_PATH")}
+        cls._orig = {k: getattr(config, k) for k in (
+            "DATA_DIR", "KB_DIR", "DB_PATH", "FAISS_PERSIST_DIR", "SKILL_INDEX_DIR", "CHAT_BACKEND",
+        )}
         config.DATA_DIR = cls.tmp / "data"
         config.KB_DIR = config.DATA_DIR / "kb"
         config.DB_PATH = config.DATA_DIR / "app.db"
+        # 测试必须**确定性且不花钱**：对话后端固定 fake。
+        # 不锁的话，.env 里配了真 key 就会真的调外部模型（慢、可能计费）；
+        # 而 key 写成占位符时更糟 —— 整个测试套件会因为一个环境的 key 直接红
+        # （真实踩过：`DEEPSEEK_API_KEY=sk-你的key` → latin-1 编码错误）。
+        config.CHAT_BACKEND = "fake"
+        # 向量索引目录也必须隔离：它是全局目录，不隔离的话一次"用临时语料跑流程"
+        # 就会把线上索引覆盖成测试语料（真实踩过：业务索引被写成 1 块，
+        # 之后 /health 恒 stale、检索永久降级 BM25；CI 因为没装 faiss 没暴露）。
+        config.FAISS_PERSIST_DIR = cls.tmp / "faiss"
+        config.SKILL_INDEX_DIR = cls.tmp / "faiss_skills"
         api.reset_services()
 
     @classmethod

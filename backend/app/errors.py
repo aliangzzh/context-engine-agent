@@ -19,6 +19,7 @@ class ErrorCode(IntEnum):
     BAD_REQUEST = 40000
     VALIDATION_ERROR = 40001
     NOT_FOUND = 40400
+    CONFLICT = 40900          # 客户端状态已过期（例如页面上的对话轮次与库里的不一致）
     PAYLOAD_TOO_LARGE = 41300
     UNSUPPORTED_MEDIA = 41500
     RATE_LIMITED = 42900
@@ -38,6 +39,7 @@ _HTTP_STATUS: dict[ErrorCode, int] = {
     ErrorCode.BAD_REQUEST: 400,
     ErrorCode.VALIDATION_ERROR: 400,
     ErrorCode.NOT_FOUND: 404,
+    ErrorCode.CONFLICT: 409,
     ErrorCode.PAYLOAD_TOO_LARGE: 413,
     ErrorCode.UNSUPPORTED_MEDIA: 415,
     ErrorCode.RATE_LIMITED: 429,

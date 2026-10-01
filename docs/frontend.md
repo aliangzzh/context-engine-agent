@@ -6,6 +6,7 @@
 |---|---|---|
 | `#/` | `views/ChatView.vue` | 对话（SSE 流式渲染）+ 上下文面板 + Agent 协作链 + **把回答标记成 badcase** |
 | `#/kb` | `views/KnowledgeView.vue` | 知识库管理：**文件上传**（拖拽/multipart）、**文本入库表单（带校验）**、**列表 + 分页 + 搜索**、**删除确认弹窗** |
+| `#/skills` | `views/SkillsView.vue` | 技能库（开发经验）：**只读**展示规则与反例、语料同步状态、**一键重新同步**、格式错误文件提示 |
 | `#/dashboard` | `views/DashboardView.vue` | 运行看板：**图表**（token 占用折线、badcase 分布柱状、分块长度分布、工具调用次数）+ 最近 badcase 列表 + 运行时配置 |
 
 路由表在 `src/router/index.ts`，用法与 vue-router 对应：

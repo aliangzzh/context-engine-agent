@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "description": "改写查询探针集（10 题）：用口语化/间接的说法提问，尽量避开语料里的原词，用来观察 BM25（字符匹配）与向量检索（语义）的差异。语料复用 eval/corpus/ 的 10 篇（与 dataset.json 同一份）。",
+  "categories": {
+    "retrieval": "RAG 召回：期望来源是否进入 top-3（统计 hit@1 / hit@3 / MRR）"
+  },
+  "cases": [
+    {
+      "id": "P01",
+      "category": "retrieval",
+      "question": "买东西攒的点数怎么折成钱？",
+      "expect": {"source": "会员积分.txt"},
+      "note": "避开「会员/积分/抵扣」原词，用「点数折成钱」表达积分抵现"
+    },
+    {
+      "id": "P02",
+      "category": "retrieval",
+      "question": "拿到手不满意，还能送回去吗？",
+      "expect": {"source": "售后政策.txt"},
+      "note": "避开「退换/退货」原词，用「送回去」表达"
+    },
+    {
+      "id": "P03",
+      "category": "retrieval",
+      "question": "约人到家来组装家具，怎么计费？",
+      "expect": {"source": "安装服务.txt"},
+      "note": "避开「上门安装/收费」原词，用「到家组装/计费」表达"
+    },
+    {
+      "id": "P04",
+      "category": "retrieval",
+      "question": "我一百一十多斤，该穿哪个号？",
+      "expect": {"source": "尺码推荐.txt"},
+      "note": "避开「身高/尺码」原词，只用体重口语说法"
+    },
+    {
+      "id": "P05",
+      "category": "retrieval",
+      "question": "找不到人的时候去哪求助？",
+      "expect": {"source": "常见问题.txt"},
+      "note": "避开「客服/联系」原词，用「求助/找不到人」表达"
+    },
+    {
+      "id": "P06",
+      "category": "retrieval",
+      "question": "东西平时都摆在哪儿？",
+      "expect": {"source": "库存库位.txt"},
+      "note": "避开「库位/货架/存放于」原词，用「摆在哪儿」表达"
+    },
+    {
+      "id": "P07",
+      "category": "retrieval",
+      "question": "用料环不环保该看什么？",
+      "expect": {"source": "材质说明.txt"},
+      "note": "避开「板材/实木」原词，只留意图词「环保」"
+    },
+    {
+      "id": "P08",
+      "category": "retrieval",
+      "question": "能不能拿热水泡？",
+      "expect": {"source": "洗涤养护.txt"},
+      "note": "避开「洗涤/水温/浸泡」里的大部分原词"
+    },
+    {
+      "id": "P09",
+      "category": "retrieval",
+      "question": "拍下之后多久能动身？",
+      "expect": {"source": "物流发货.txt"},
+      "note": "避开「发货/出库/送达」原词，用「动身」表达"
+    },
+    {
+      "id": "P10",
+      "category": "retrieval",
+      "question": "开春穿什么色儿显干净？",
+      "expect": {"source": "颜色选择.txt"},
+      "note": "避开「搭配/色系」原词，用口语「色儿显干净」"
+    }
+  ]
+}

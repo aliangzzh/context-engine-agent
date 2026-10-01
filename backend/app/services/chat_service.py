@@ -6,6 +6,7 @@ per request so that each session gets its own history handle.
 """
 from __future__ import annotations
 
+import sys
 import time
 from pathlib import Path
 from typing import Iterator
@@ -18,10 +19,11 @@ from ..context.rerank import Reranker
 from ..context.summarizer import HistorySummarizer
 from ..logging_config import get_logger, log
 from ..metrics import get_metrics
-from ..models import get_model_backend
+from ..models import degrade_reason, get_model_backend
 from ..retrieval.knowledge import KnowledgeBase
 from ..retrieval.retriever import get_retriever
 from ..schemas import ChatReply, ChatRequest, Health, IngestResult
+from ..skills import corpus_status, ensure_synced, get_skills
 from ..storage.repo import FeedbackRepository, KbRepository
 
 logger = get_logger("app.services")
@@ -58,11 +60,34 @@ class AppServices:
 
     # -- health ---------------------------------------------------------------------
     def health(self) -> Health:
+        """健康检查。
+
+        ``retrieval_backend`` 是**配置层意愿**，``retrieval_effective`` 才是**实际生效**
+        的后端——两者不一致就说明向量那路没跑起来（依赖缺失 / 索引过期 / 从没建过）。
+        这是排查"为什么没走向量"的第一入口。
+        """
+        try:
+            effective = self.retriever.effective_backend()
+            vector_info = self.retriever.vector.describe(self.retriever.texts)
+            if self.retriever.last_degrade:
+                vector_info["last_degrade"] = self.retriever.last_degrade
+        except Exception:  # 健康检查本身不能挂
+            effective, vector_info = config.effective_retrieval_backend(), {}
+        # 降级原因：配置写着 qwen_api、实际跑 fake 时必须能说出为什么（这个坑踩过一次）
+        degrade = degrade_reason()
+        if not degrade and self.model.name == "fake" and config.effective_chat_backend() != "fake":
+            degrade = "配置的对话后端未生效，实际用的是离线 fake 模型"
         return Health(
             status="ok",
             chat_backend=config.effective_chat_backend(),
             retrieval_backend=config.effective_retrieval_backend(),
+            retrieval_effective=effective,
+            vector_index=vector_info,
+            # 解释器路径：依赖缺失时第一个要确认的就是"跑的是哪个 Python"。
+            # 排查过一次"终端里依赖齐全、服务里全缺"，就是靠这个字段定死的。
+            runtime={"python": sys.executable, "version": sys.version.split()[0]},
             model=self.model.name,
+            chat_degraded_reason=degrade,
             db_backend=config.effective_db_backend(),
             cache_backend=config.effective_cache_backend(),
         )
@@ -90,6 +115,7 @@ class AppServices:
             context=res.context,
             agent_trace=res.trace.to_list(),
             used_tools=res.used_tools,
+            skills=res.skills,
             backend=self.model.name,
             tokens_requested=res.context.total_tokens,
             tokens_generated=len(res.answer),
@@ -135,6 +161,26 @@ class AppServices:
     def kb_delete(self, source: str) -> dict:
         return self.kb().delete_source(source)
 
+    # -- 技能库（开发经验）--------------------------------------------------------------
+    def skills(self, reload: bool = False) -> dict:
+        """技能列表 + 语料状态 + **被跳过的（格式有问题的）文件**。
+
+        为什么要把 skipped 一起返回：技能是人手写的文件，写错是常态。
+        只在命令行 check 里提示的话，页面上就看不出"我那条技能为什么没生效"。
+        """
+        loaded = get_skills(reload=reload)
+        return {
+            "stats": corpus_status(loaded.skills),
+            "skills": [s.as_dict() for s in loaded.skills],
+            "skipped": loaded.skipped,
+        }
+
+    def sync_skills(self) -> dict:
+        """重新同步技能语料（页面上那个"重新同步"按钮）。"""
+        loaded = get_skills(reload=True)
+        summary = ensure_synced(loaded.skills, force=True)
+        return {"summary": summary, **self.skills()}
+
     # -- badcase 反馈 ------------------------------------------------------------------
     def add_feedback(self, session_id: str, message: str, answer: str, reason: str, note: str = "") -> dict:
         row = self.feedback_repo.add(session_id, message, answer, reason, note)
@@ -147,9 +193,10 @@ class AppServices:
 
     # -- 看板 -------------------------------------------------------------------------
     def stats(self) -> dict:
-        """看板数据：知识库规模 + badcase 分布 + 最近请求的 token/耗时序列。"""
+        """看板数据：知识库规模 + badcase 分布 + 最近请求的 token/耗时序列 + 技能库。"""
         return {
             "kb": dict(self.kb_repo.stats(), chunk_lengths=self.kb_repo.chunk_length_histogram()),
+            "skills": corpus_status(get_skills().skills),
             "feedback": {
                 "total": self.feedback_repo.list(page=1, size=1)["total"],
                 "distribution": self.feedback_repo.distribution(),
@@ -158,6 +205,8 @@ class AppServices:
             "runtime": {
                 "chat_backend": config.effective_chat_backend(),
                 "retrieval_backend": config.effective_retrieval_backend(),
+                "retrieval_effective": self.retriever.effective_backend(),
+                "vector_status": self.retriever.vector_status(),
                 "db_backend": config.effective_db_backend(),
                 "cache_backend": config.effective_cache_backend(),
                 "context_budget": config.CONTEXT_TOKEN_BUDGET,

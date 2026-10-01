@@ -2,7 +2,7 @@
 // 应用外壳：导航（路由）+ 后端状态 + Mock 开关 + 页面出口。
 import { onMounted } from 'vue'
 import RouterView from './components/RouterView.vue'
-import { backendLabel, refreshHealth, sessionId, setSessionId, storageLabel } from './composables/useSession'
+import { backendLabel, healthDegraded, healthNote, refreshHealth, sessionId, setSessionId, storageLabel } from './composables/useSession'
 import { setMock, useMock } from './mock'
 import { useRoute, useRouter } from './router'
 
@@ -46,7 +46,7 @@ onMounted(() => {
           title="会话 id（写入 URL 里的会话/上下文）"
           @change="setSessionId(($event.target as HTMLInputElement).value)"
         />
-        <span class="badge">{{ backendLabel }}</span>
+        <span class="badge" :class="{ warn: healthDegraded }" :title="healthNote">{{ backendLabel }}</span>
         <span v-if="storageLabel" class="badge">{{ storageLabel }}</span>
         <label class="switch" title="接口未就绪时用假数据把页面流程跑通">
           <input type="checkbox" :checked="useMock" @change="setMock(($event.target as HTMLInputElement).checked)" />

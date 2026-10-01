@@ -5,7 +5,7 @@ import AgentPanel from '../components/AgentPanel.vue'
 import ContextPanel from '../components/ContextPanel.vue'
 import FormField from '../components/FormField.vue'
 import Modal from '../components/Modal.vue'
-import { FEEDBACK_REASONS, feedbackCreate, streamChat, type ContextPayload, type StreamDone, type TraceStep } from '../api'
+import { FEEDBACK_REASONS, draftFromChat, feedbackCreate, streamChat, type ContextPayload, type StreamDone, type TraceStep } from '../api'
 import { maxLen, required, useForm } from '../composables/useForm'
 import { backendLabel, sessionId } from '../composables/useSession'
 
@@ -22,6 +22,35 @@ const context = ref<ContextPayload | null>(null)
 const trace = ref<TraceStep[]>([])
 const usedTools = ref<string[]>([])
 const retrievedCount = ref(0)
+
+// --- 沉淀为经验（把这一轮所在的整个事件片段写成草稿）-------------------------------
+// 只写 skills/_inbox/（素材区，不进语料）；正式技能必须人工过审后提升，所以这里
+// 明确告诉用户"还不会生效"，避免"点了就以为学会了"。
+const draftBusy = ref(0)
+const draftNotice = ref('')
+
+async function sinkToDraft(index: number) {
+  const question = [...messages.value.slice(0, index)].reverse().find((m) => m.role === 'user')?.content || ''
+  const turnIndex = messages.value.slice(0, index + 1).filter((m) => m.role === 'user').length
+  if (!question || !turnIndex) return
+  draftBusy.value = index
+  draftNotice.value = ''
+  try {
+    const res = await draftFromChat({
+      session_id: sessionId.value,
+      turn_index: turnIndex,
+      expected_user: question,
+    })
+    draftNotice.value = res.created
+      ? `已写入草稿区：${res.created}（打分 ${res.score}，${res.categories}/3 类信号）`
+        + ' —— 这是素材，需人工过三问后提升为技能才会生效（技能页可查）'
+      : `已存在相似条目（${res.duplicate?.[0]} ${res.duplicate?.[1]}），没有重复写入`
+  } catch (e: any) {
+    draftNotice.value = `沉淀失败：${e?.message || '未知错误'}`
+  } finally {
+    draftBusy.value = 0
+  }
+}
 
 // --- badcase 反馈 -----------------------------------------------------------------
 const feedbackOpen = ref(false)
@@ -115,6 +144,9 @@ async function send() {
             {{ m.content }}
             <div v-if="m.role === 'assistant' && m.content && !streaming" class="msg-actions">
               <button class="link-btn" @click="openFeedback(i)">标记问题</button>
+              <button class="link-btn" :disabled="draftBusy === i" @click="sinkToDraft(i)">
+                {{ draftBusy === i ? '沉淀中…' : '沉淀为经验' }}
+              </button>
             </div>
           </div>
         </div>
@@ -130,6 +162,7 @@ async function send() {
         <button class="send" :disabled="!canSend" @click="send">{{ streaming ? '…' : '发送' }}</button>
       </div>
       <p v-if="error" class="error">{{ error }}</p>
+      <p v-if="draftNotice" class="draft-notice">{{ draftNotice }}</p>
     </section>
 
     <aside class="side">
@@ -202,6 +235,8 @@ async function send() {
 .send { background: var(--accent); color: #fff; border: none; border-radius: 10px; padding: 0 20px; font-size: 14px; cursor: pointer; }
 .send:disabled { opacity: 0.5; cursor: not-allowed; }
 .error { color: #ff7b7b; font-size: 12px; padding: 0 22px; margin: 0 0 8px; }
+.draft-notice { color: var(--accent2); font-size: 12px; padding: 0 22px; margin: 0 0 8px; line-height: 1.6; }
+.msg-actions { display: flex; gap: 14px; }
 
 .side { width: 400px; display: flex; flex-direction: column; background: var(--panel); }
 .tabbar { display: flex; gap: 10px; align-items: center; padding: 12px 16px 0; }

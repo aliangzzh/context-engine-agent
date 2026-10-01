@@ -178,6 +178,41 @@ async def kb_delete(source: str) -> dict:
     return JSONResponse(status_code=status, content=body)
 
 
+# --- skills（开发经验技能库）--------------------------------------------------------
+@app.get("/api/skills", tags=["skills"], summary="技能库列表（含语料状态与格式错误的文件）")
+async def skill_list(reload: int = 0) -> dict:
+    status, body = await run_in_threadpool(api.handle_skill_list, {"reload": reload})
+    return JSONResponse(status_code=status, content=body)
+
+
+@app.post("/api/skills/sync", tags=["skills"], summary="重新同步技能语料（md5 幂等）")
+async def skill_sync(payload: dict | None = None) -> dict:
+    status, body = await run_in_threadpool(api.handle_skill_sync, payload or {})
+    return JSONResponse(status_code=status, content=body)
+
+
+@app.get("/api/skills/drafts", tags=["skills"], summary="草稿区列表（_inbox/ 里的素材）")
+async def skill_drafts() -> dict:
+    status, body = await run_in_threadpool(api.handle_skill_drafts)
+    return JSONResponse(status_code=status, content=body)
+
+
+@app.delete("/api/skills/drafts/{name}", tags=["skills"],
+            summary="移除草稿（归档到 _trash，不是真删）",
+            responses={404: {"description": "草稿不存在(40400)"}})
+async def skill_draft_archive(name: str) -> dict:
+    status, body = await run_in_threadpool(api.handle_skill_draft_archive, name)
+    return JSONResponse(status_code=status, content=body)
+
+
+@app.post("/api/skills/draft-from-chat", tags=["skills"],
+          summary="把某一轮对话沉淀成草稿（按提问文本定位；人工显式信号，仍然查重）",
+          responses={404: {"description": "会话不存在，或会话里找不到该提问(40400)"}})
+async def skill_draft_from_chat(payload: dict) -> dict:
+    status, body = await run_in_threadpool(api.handle_skill_draft_from_chat, payload or {})
+    return JSONResponse(status_code=status, content=body)
+
+
 # --- feedback ---------------------------------------------------------------------
 @app.post("/api/feedback", tags=["feedback"], summary="提交 badcase 反馈")
 async def feedback(payload: FeedbackRequest) -> dict:

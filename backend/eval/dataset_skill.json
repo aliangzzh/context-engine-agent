@@ -1,0 +1,86 @@
+{
+  "version": 2,
+  "description": "技能复用（开发经验）题集：量『该命中的技能命中 + 约束真的进模型输入 + 不该命中的不误命中』。独立于 30 题开发集，不进 CI 回归门（像留出集一样只跑并记录）。A/B 命令：python -m eval.run --dataset dataset_skill.json --skills both",
+  "categories": {
+    "skill": "开发经验技能（skills/*/SKILL.md）：正向题看命中与注入，负向题看有没有误命中"
+  },
+  "cases": [
+    {
+      "id": "S01",
+      "category": "skill",
+      "question": "工具调用的时候参数怎么抽？有没有踩过坑",
+      "expect": {
+        "skill": "tool-arg-extraction",
+        "must_contain": ["抽不出来"]
+      },
+      "note": "正向：function calling 的 arguments 那一步；约束必须进模型输入，而不是只在面板里"
+    },
+    {
+      "id": "S02",
+      "category": "skill",
+      "question": "帮我查一下以前踩过的工具调用假参数的坑，有什么经验",
+      "expect": {
+        "skill": "tool-arg-extraction",
+        "must_contain": ["extract_args"]
+      },
+      "note": "正向：口语化提问（只说『工具调用/假参数』，没提技能名），仍要能命中"
+    },
+    {
+      "id": "S03",
+      "category": "skill",
+      "question": "写异常处理有什么要注意的经验",
+      "expect": {
+        "skill": "silent-exception-swallow",
+        "must_contain": ["over_budget"]
+      },
+      "note": "正向：不能用 except Exception: return {} 把失败吞掉"
+    },
+    {
+      "id": "S04",
+      "category": "skill",
+      "question": "SQLite 在多线程服务里踩过的坑，有经验吗",
+      "expect": {
+        "skill": "sqlite-cross-thread",
+        "must_contain": ["check_same_thread"]
+      },
+      "note": "正向：跨线程使用连接的线程亲和性问题"
+    },
+    {
+      "id": "S05",
+      "category": "skill",
+      "question": "接口字段前后端对不上，之前有踩坑经验吗",
+      "expect": {
+        "skill": "api-field-drift",
+        "must_contain": ["used_tools"]
+      },
+      "note": "正向：SSE/JSON 字段名漂移导致页面静默不显示"
+    },
+    {
+      "id": "S06",
+      "category": "skill",
+      "question": "部署到服务器有什么要注意的经验",
+      "expect": {
+        "skill": null
+      },
+      "note": "负向：命中『经验』这个路由词，但技能库里没有对得上的技能 —— 必须老实说没有，不许硬凑"
+    },
+    {
+      "id": "S07",
+      "category": "skill",
+      "question": "今天北京天气怎么样",
+      "expect": {
+        "skill": null
+      },
+      "note": "负向：和开发经验完全无关（这条是实测暴露过误命中的问法）"
+    },
+    {
+      "id": "S08",
+      "category": "skill",
+      "question": "加绒牛仔怎么洗",
+      "expect": {
+        "skill": null
+      },
+      "note": "负向：业务知识库的问题，不该被技能库截胡"
+    }
+  ]
+}

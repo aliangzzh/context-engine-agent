@@ -27,6 +27,11 @@ backend/finetune/outputs/
 backend/eval/_run/
 backend/eval/reports/
 
+# 技能库：正文（skills/）进版本库；派生语料与索引不进
+backend/data/skills/
+# 技能草稿区（skills/_inbox/）：对话记录 / 待补全草稿属于本地素材，不进版本库
+skills/_inbox/
+
 # Node
 node_modules/
 frontend/dist/
@@ -40,3 +45,9 @@ Thumbs.db
 
 # 本地草稿与笔记（不进版本库）
 学习笔记/
+
+# 求职 / 简历素材（绝不进版本库）
+docs/resume-bullets.md
+docs/resume*.md
+*resume-bullets*
+*简历*
